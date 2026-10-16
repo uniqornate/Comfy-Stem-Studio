@@ -47,7 +47,7 @@ test('local separation reuses native SaveAudio files without downloading them ag
     return { name, id: `asset-${key}`, jobId: 'job-b', nodeId: String(10 + index), type: 'audio', toFile() { throw Error('Native output must not be downloaded again.'); } };
   }));
   const { client } = fakeClient(outputs);
-  const runner = new Separation(join(root, 'cache'), path => path, { check: async () => ({ ready: true, models: ['sfc'] }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => path, { check: async () => ({ ready: true, models: ['mrx'] }), makeClient: () => client });
   await runner.start(profile, '/chosen/video.mp4', { nativeRoot: root, outputPrefix }); await runner.pending;
   assert.equal(runner.snapshot().phase, 'complete');
   for (const stem of runner.snapshot().stems) {

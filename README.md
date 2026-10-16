@@ -1,143 +1,47 @@
 # Stem Studio
 
-Current installer: `release/Stem-Studio-Setup.exe`.
+Desktop workspace for separating a video's soundtrack into editable stems with your own local ComfyUI. Everything runs on your machine through the official ComfyUI SDK and a private API Proxy. No partner nodes and no cloud APIs are used. Application code is MIT licensed; model, code and data licenses remain independent (see below).
 
-Version 0.11.0 adds non-destructive timeline editing. Click to place the playhead and use Ctrl+B to split every channel; right-click a lane and use Split channel to split only that channel at the clicked time. Drag clip edges to trim or restore existing source bounds without moving/stretching audio or crossing adjacent clips. Shift-select a range, hover inside it and drag the horizontal gain line vertically (-60 to +24 dB); double-click resets that range to0 dB. Reset channel edits is available in the context menu. Extraction works on the selection, or the whole channel if there is no selection, and receives the edited parent audio. Clip/gain edits persist with projects. Playback schedules source-aligned segments with region gain; single/batch stem and video exports first render edited audio through official SDK LoadAudio -> StemStudioEditAudio -> SaveAudio. Native SaveVideo still preserves video packets and uses edited FLAC files. Separate-video-track exports retain the prior mixer-independent convention, while applying clip/gain edits. Editing is limited to256 clips and512 gain regions per channel. No time-stretch, clip movement, crossfades or Undo stack is provided in this version.
+Download the latest installers from [Releases](https://github.com/uniqornate/Comfy-Stem-Studio/releases): `Stem-Studio-Setup.exe` (recommended, unified setup) or `Stem-Studio-Core.exe` (app only). Builds are unsigned and Windows only.
 
-Floating video has invisible edge/corner resize grips. Waveform height drag previews update one CSS variable per animation frame and commit React/project state at gesture end (wheel commits after140ms); this is a structural performance fix, not a live benchmark. SAM Small TV and Large TV are separate optional preparations/selection, using shared private packages and encoder cache where possible. Neither new model is downloaded by the agent. Both require Hugging Face repository access plus an hf_ read token from that same approved account; verification codes do not work. Preparation is opt-in and the token is not persisted. Large's real memory usage/Windows setup/inference remain user acceptance. Update the Comfy integration and restart idle ComfyUI to expose the variant and edit nodes.
+## Features
 
-PromptSep remains unavailable as an executable integration: the official PromptSep repository contains only README at commit d7a491b16b2d5e5afdd2e034d417db45aba3abf3. The project's Code Base link points to GuideSep, whose published music/mimicry model is not a verified PromptSep text-conditioned checkpoint. The UI explicitly shows PromptSep unavailable; no substitute is mislabeled as PromptSep. Sources: https://yutongwen.github.io/PromptSep/ , https://github.com/YutongWen/PromptSep , https://github.com/YutongWen/GuideSep . Checked2026-10-17.
+- Separate dialogue, music and effects with **MERL MRX (default)**, BandIt v2 or SFC-Locoformer.
+- Waveform timeline with shared video/stem transport, mute/solo, zoom, range loop and non-destructive clip trim, split and gain edits.
+- Extract named sounds with USS/PANNs (AudioSet classes, or All with Auto thresholds) and, experimentally, SAM Audio with text, time examples and visual boxes.
+- Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
 
-Version 0.10.0 adds Projects in the header: new/open/recent, rename, Save as, show folder, source relink and automatic last-session restoration. Workspace autosaves every two seconds and flushes on normal close. Takes, child groups, per-take mix/zoom/wave height/scroll, selected range/loop, playhead, model and layout settings are retained. Playback resumes paused. Interrupted model jobs are not resubmitted automatically.
+## Requirements
 
-For a selected local ComfyUI installation, source videos are copied once into `ComfyUI/input/StemStudio/<project-id>/`. Native SaveAudio/USS outputs are scoped to `ComfyUI/output/StemStudio/<project-id>/<run-id>/`; the project sidecar lives at `output/StemStudio/<project-id>/project.stemstudio.json`. Project saves reference those outputs instead of copying/downloading them into a second media library. Processing still submits through the official Comfy SDK/API Proxy, including normal SDK asset handling. Native SaveVideo export remains unchanged. The last-project/recent index stays in Electron user data. Project JSON stores workspace data and media/asset references, not HF tokens or connection credentials. Save as creates a separate workspace identity but shares referenced native media; it is not a self-contained media archive. Opening a different source starts another project and keeps the previous one.
-
-This local storage path assumes ComfyUI's standard `input` and `output` directories under the selected installation. Custom server `--input-directory`/`--output-directory` overrides are not discovered automatically. A missing native output fails clearly rather than silently redownloading to another library. Missing media references are retained with a warning. Projects without a selected local installation use managed local project assets as the compatibility path. Existing unsaved results from versions before project persistence cannot be reconstructed after the old application closes. Sudden termination can lose changes since the last completed autosave; atomic primary/backup project files protect the previous completed save.
-
-Version 0.9.0 adds free English SAM descriptions, positive/negative time examples, optional automatic span prediction and visual target boxes. Select a processing range, right-click a channel and open Extract sound. Sound cards remain the default text query; optional description overrides them. Example times use the original timeline and are converted once to crop-relative SAM anchors. Opposite examples cannot overlap. Visual guidance supports up to 30-second processing selections and 12 manual target boxes at different video times. Boxes interpolate between marks; a single box holds its position. Picture only ignores sound labels/text. Visual cues use the original uploaded video via native ComfyUI LoadVideo, while separation still uses the selected parent channel. All modes retain padded child outputs and existing timeline groups. This is manual rectangular visual masking, with no SAM3 or automatic object tracking. Space types normally in the SAM description; outside that field it remains global play/pause. Ctrl+Enter submits the current modal action.
-
-Version 0.8.0 moves detail recovery to the timeline. Shift-drag selects and starts a loop; right-click a channel and choose Extract details (USS All + Auto) or Extract sound (category/target/model picker). Outputs remain full-timeline aligned and are grouped under their source with matching colors, fold controls and initially muted audio. Existing mixer settings survive adding children. USS All suppresses near-identical waveforms heuristically; labels and fidelity remain experimental. Expanded timeline keeps a draggable borderless preview of the same video element. Resource telemetry and timeline tools use compact single-row controls.
-
-SAM Audio small-tv has an experimental Comfy node backed by a private user-approved runtime. In Extract sound choose SAM Audio, approve the official SAM/PE-AV access terms in your Hugging Face account, enter a read token and approve preparation. Preparation downloads multi-GB CUDA/model/encoder dependencies, reuses caches and marks ready only after CPU model/processor and offline-load checks. The token is not saved. Main weights and secondary caches live under ComfyUI/models/audio_separation/sam-audio-small-tv; Python packages live in app data, separate from ComfyUI Python. Real Windows dependency compatibility, memory needs and extraction quality are not agent-verified. SAM uses one candidate; text, anchors and manually masked source-video cues can be combined. Optional automatic span prediction is used only without manual examples or Picture only. The processing selection is separate from positive/negative sound examples. SAM3 tracking, automatic SAM all-class scanning and quality guarantees are not implemented. Start with a short selection. See docs/DETAIL_MODELS.md for alternatives and acceptance notes.
-
-
-Windows builds always overwrite the same installer paths in release/. Application version metadata still increments; no new version-specific output directories are created.
-
-Version 0.7.1 replaces the supplied Comfy wordmark with logo.svg and puts Stem Studio typography alongside it. Setup and managed proxy children now use CreateNoWindow rather than allocating hidden consoles. Header memory readings come from selected ComfyUI system_stats; optional thermal readings use the bundled read-only temperatures route and existing psutil/NVML, with n/a for unavailable sensors. No sensor package or external monitoring executable is installed. USS defaults to All; selected model, action, target and threshold settings persist locally. Source videos, takes and unfinished jobs are not restored across restart. Upgrade with the same ComfyUI/model choices; verified weights are reused. Thermal route requires the updated integration and an idle ComfyUI restart. Live acceptance remains user-owned.
-
-Version 0.6.2 adds a hidden-console host for setup/proxy/engine helper commands, preserving log output and child-process cleanup. Supplied Comfy SVGs appear in the app header, connection/export dialogs and installer. Successful Finish opens the installed app once; cancellation, failure and titlebar close do not. Existing model files are reused. Actual console visibility and Finish behavior await user acceptance.
-
-Electron desktop workspace for local ComfyUI soundtrack separation. Application code MIT; model/code/data licenses remain independent. Version 0.6.1 exports video through the official ComfyUI SDK/API Proxy and native SaveVideo node, with lossless MKV/FLAC. Byte-range seeking, uniform layout zoom and waveform height controls remain available. BandIt v2/MRX and USS named-sound extraction remain available. The user confirmed real SFC three-stem separation in 0.3.2; new adapters and timeline playback are awaiting live user acceptance.
+- Windows 10/11 and a local ComfyUI (portable or venv) with a recent ComfyUI build.
+- NVIDIA GPU recommended; SAM Audio requires CUDA.
+- Internet on first setup for model weights and the managed API Proxy runtime.
 
 ## Install
 
-Run `release/0.7.1/Stem-Studio-0.7.1-Setup.exe` over the current application, with Stem Studio closed. Select the existing local ComfyUI first. Review SFC, BandIt v2, MRX and USS/PANNs selections and licenses, approve the setup changes and choose Prepare everything. Existing verified files and prepared proxy runtime are reused. No uninstall is required. SFC is required; all other packs are optional and initially selected in this release.
+1. Run `Stem-Studio-Setup.exe` with Stem Studio closed and select your ComfyUI folder.
+2. Review the model packs and licenses, approve the changes and choose Prepare everything. MRX is selected by default; verified existing files are reused.
+3. Allow the setup to install the ComfyUI integration and safely restart an idle ComfyUI.
+4. Open Stem Studio, pick a video, choose a model and press Separate stems (Ctrl+Enter).
 
-A single custom WPF setup installs the app, checks/downloads weights, copies inference source, prepares a private Python/API Proxy, readies the engine and saves the connection. An approved start/restart checkbox allows starting the selected known portable/venv engine or restarting a matching idle engine after process/queue checks. Unknown listeners/processes are left alone. ComfyUI already runs in the background after successful automatic preparation; a second BAT launch is unnecessary. Connection settings retains proxy controls; integration preparation is handled by the unified setup.
+SAM Audio is optional: it needs your own Hugging Face account, approval of the SAM Audio and PE-AV model pages and a read token (`hf_...`). The token is used only for preparation and is not saved.
 
-Models use `<selected ComfyUI>/models/audio_separation/` with separate `sfc-locoformer-dnr`, `bandit-v2`, `mrx` and `uss` folders. Sizes and pinned hashes are checked before reusing existing files. Valid legacy LOCALAPPDATA/Stem Studio/models files are copied into the native folder without deleting originals. Missing files download with cancellation, persistent hash-bound partials, validated HTTP Range resume and final hash verification. Existing mismatched final files are preserved and reported. Incomplete legacy-location partials are not migrated. Uninstall leaves external model/runtime caches.
+## Models and licenses
 
-All selected model files total 2145664931 bytes (about 2.00 GiB). If the existing SFC/USS/PANNs files are already valid, the new BandIt/MRX downloads total 568997786 bytes (about 542.6 MiB). Disk weight sizes do not represent peak VRAM. Models execute per job and are released afterward; real VRAM/time measurements are pending.
+| Model | Use | Weights license | Open weights only? |
+|---|---|---|---|
+| MERL MRX (adapted loudness) | Default separator | MIT | Yes |
+| BandIt v2 multilingual | Separator | CC BY-SA 4.0 (code Apache 2.0) | Yes |
+| USS at_soft + PANNs Cnn14 | Named sound extraction | Apache 2.0 / CC BY 4.0 | Yes |
+| SFC-Locoformer Medium DnR | Optional separator | CC BY-NC-SA 4.0 | Non-commercial only |
+| SAM Audio (small/large tv) | Experimental extraction | SAM license, gated on Hugging Face | Gated access, review the license |
 
-## Listen and compare
+Pinned sources, sizes and hashes: `setup/models.json`. Vendored code revisions and notices: `comfy_nodes/StemStudio/NOTICE.md`. Third-party mirrors are pinned by revision and verified by hash.
 
-Choose a video and an installed model: SFC-Locoformer, BandIt v2 multilingual or MERL MRX adapted-loudness baseline. Separate stems runs through the official Comfy SDK/API Proxy with LoadAudio, StemStudioSeparate and three SaveAudio outputs. Dialogue, Music and Effects are exposed only after all real output files arrive. Current adapters produce mono audio (SFC/MRX 44.1 kHz, BandIt 48 kHz). MRX is an alternative baseline, not a claim of superior quality.
+## Status
 
-The waveform timeline decodes actual FLAC audio into Web Audio buffers. Tracks share an AudioContext clock and scheduled start time, with common play/pause, return-to-start, seek/playhead, zoom, mute/solo and per-track preview level. Waveforms use actual per-bin absolute PCM peaks; no random/example waveforms. Decoding sequentially limits temporary memory, with a 768 MiB decoded-buffer preview guard. Longer results can still be downloaded. Timeline mixing controls affect preview only; downloads preserve the original stem bytes.
-
-Completed results remain as up to 12 selectable takes for the current source. Run other models on that source and switch takes to compare. Each take retains individual and complete-set exports even if a later job fails. Selecting another video clears session takes. Take switching pauses playback while the new waveforms decode and preserves video position. Video presentation time controls both video and stem playback, with common seek, buffering handling and drift correction. Instant A/B switching is not implemented; video exports are available through Export video.
-
-USS detail recovery accepts the original audio or a selected stem. Search/select an AudioSet class such as Walk, footsteps or Door and adjust the detection threshold. It outputs the named target plus its arithmetic remainder, at mono 32 kHz, as another take. This is class-conditioned extraction with PANNs scores and at_soft USS, not free-text prompting, arbitrary object naming or a guarantee that every named sound is present. Parent-class descendant expansion and automatic all-class scanning are not implemented. Threshold defaults to 0.1; zero disables gating.
-
-## Sources and restrictions
-
-Pinned metadata and license links: `setup/models.json`; vendored revisions/modifications/licenses: `comfy_nodes/StemStudio/NOTICE.md`.
-
-- SFC Medium DnR weights: CC BY-NC-SA 4.0, with non-commercial restriction independent of the app MIT license.
-- BandIt v2 multilingual official Zenodo weights: CC BY-SA 4.0; code Apache 2.0.
-- MRX adapted-loudness repository model and code: MIT.
-- USS code: Apache 2.0; PANNs checkpoint/AudioSet metadata: CC BY 4.0, with attribution.
-
-Inference sources are bundled without their research/training dependency stacks. Existing ComfyUI torch, torchaudio, numpy, einops and librosa are used. USS STFT/PANNs inference definitions are vendored with notices; no new Python packages are installed into ComfyUI. Checkpoints use tensor-only loading and strict keys; actual checkpoint compatibility for the new adapters is pending user inference.
-
-The private proxy uses pinned uv 0.13.1, managed Python 3.12 and comfy-api-proxy 0.1.6 under Electron userData/managed-proxy. It needs internet on first preparation, reuses completed runtime files and searches loopback ports 8189..8199. System/ComfyUI package environments are not modified. Transitive dependencies and Python patch version are not fully locked. App-owned proxies stop with the app; external proxies remain externally owned. Authenticated proxies, automatic ComfyUI/CUDA installation, remote provisioning and custom base-directory/model-path discovery are unsupported.
-
-Installer progress writes are throttled and best-effort; transient Windows reader locks cannot abort preparation. Unexpected helper exits include process code/stderr and a log under LOCALAPPDATA/Stem Studio/setup-logs. Engine startup logs are in Electron userData/comfy-startup.log. The installer requests no elevation and uses Windows PowerShell 5.1/WPF/.NET Framework, with silent NSIS for app files and no WebView2 dependency. The unsigned package, native dialogs and uninstaller require user acceptance.
+Separation with SFC was confirmed by a user on real media. Other adapters, the timeline, SAM Audio and exports are implemented but awaiting wider live acceptance. Quality, VRAM use and long-media behavior are not benchmarked. PromptSep is shown as unavailable because its public repository contains no runnable model.
 
 ## Development
 
-Node 22+: `npm ci`, `npm run dev`, `npm run build`, `npm test`. Offline download fixtures: `powershell -NoProfile -ExecutionPolicy Bypass -File test/download-worker-offline.ps1`. `npm run dist:win` builds custom Setup.exe; distribute it rather than the embedded Core.exe. Build host needs the .NET Framework C# compiler.
-
-Agent validation uses source review, mocked network/process/export fixtures, Python AST parsing and static/build checks. No live app/installer run, playback or inference is performed by the agent. Live acceptance belongs to the user. Quality, new model source-order/parity, VRAM, short/long media behavior and timeline audio remain unverified. Signing, stereo preservation, editable timeline arrangement and cross-launch session/cache recovery are pending. Real video/stem sync and adaptive threshold quality require user acceptance.
-
-
-## 0.4.3 shared download recovery
-
-All model weights above 32 MiB (SFC, USS, PANNs, BandIt v2 and MRX) use the same four-connection range downloader. Fixed 8 MiB ranges are saved as hash-bound chunk files. Existing contiguous .part data from older installers remains a valid prefix; completed and partial chunks resume at exact offsets. Ranges must match start/end/total metadata and expected response length. After assembly, expected size and the original model hashes are still mandatory before finalization. A full-file hash failure clears the invalid partial/chunk cache. Small configs retain sequential transfer.
-
-Each range has bounded retries. Header/read stalls time out after 30 seconds. A connection remaining below 256 KiB/s for at least 12 seconds is reconnected/rotated while retaining its bytes; after two slow retries, the last attempt may continue slowly rather than loop forever. Configured mirrors are rotated on errors or low throughput. Servers ignoring Range trigger the validated single-connection fallback. Download speed counts newly transferred network bytes, excluding reused cache. These are recovery mechanisms, not a guarantee of any particular remote throughput.
-
-BandIt v2 now prefers a third-party pinned Hugging Face mirror jsoncx/bandit-v2 at fde0ff714b879259f3f436a0eb9046626f82a880, file checkpoint-multi.ckpt, published SHA256 abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc and size446680129. Final validation requires both the author's Zenodo MD5 fea2868787551b0cff36cfcf7c3622a3 and the mirror SHA256. Zenodo remains fallback. No slim/converted model substitution was made. Other source identities and model weights are unchanged.
-
-To switch from an actively running older installer, cancel preparation, wait until it finishes stopping, close it, then run 0.4.3 with the same ComfyUI/model destination. Do not run two downloaders against the same model cache. Verified complete files and safely written legacy partial data are reused. Live source speed, range support and proxy/network behavior require user acceptance; development validation uses in-memory HTTP fixtures only.
-
-
-## 0.4.3 setup readiness
-
-Setup/app audio readiness now requests only /object_info/LoadAudio, /object_info/StemStudioSeparate, /object_info/SaveAudio and optional /object_info/StemStudioExtract. It no longer polls the global /object_info inventory, which on this ComfyUI version starts asset scans and evaluates every installed extension. Reachability checks use system_stats/proxy health without node inventory. Required-node discovery has a four-minute wall-clock retry window with specific last-error/missing-node details. Optional USS absence cannot prevent basic separation setup. WPF reads helper JSON as UTF-8 explicitly.
-
-If an earlier setup waits on the global inventory after ComfyUI is open, Cancel preparation at this stage preserves verified model files and leaves the selected ComfyUI running. Wait for cancellation to complete, close the old setup, then install 0.4.3 over the existing application. A matching already-ready engine with unchanged node files can be reused without another restart. No manual model deletion/redownload is needed. Actual readiness/UI acceptance remains user-owned.
-
-
-## 0.4.3 USS All
-
-Target sound now offers All when the updated engine node is installed. It scans all527 PANNs class scores on the selected input with two-second half-overlap windows, caches scores on CPU, and extracts every class whose maximum window score reaches the selected positive threshold. No top-N cap. It retains threshold gating per window during extraction. If no class is detected, the job reports an explicit no-detections error instead of a fake successful empty result.
-
-Each detected class is calculated/saved serially with the engine's built-in FLAC helper, returning a dynamic list of audio outputs through the official SDK. Full-length tensors for all classes are not accumulated in memory. File names include the AudioSet index and safe class slug; the app validates unique class IDs and receives every output as a named timeline/download channel. All has no arithmetic remainder because classes may overlap and are not an additive partition of the source. Single-target target/remainder remains unchanged. Default preview solos the first All channel; mute/solo controls can audition others. Preview-memory failures still expose individual downloads plus Download all.
-
-Threshold must be above zero for All; the UI minimum is0.05. Lower thresholds can produce many overlapping/false-positive classes and longer processing. Detection labels and extraction quality depend on PANNs/USS and are user-unverified. The All output node uses the modern ComfyUI UI.AudioSaveHelper API, whose local source contract was inspected. No live inference or actual audio save was executed by the agent. No additional model weights are required beyond USS/PANNs.
-
-
-## 0.5.0 compact synchronized workspace
-
-The left controls scroll invisibly within the same fixed height as Preview. Marketing copy and redundant engine installation/check controls are removed; Connection settings lives in the header. Waveform lanes occupy the remaining viewport. Video and stems share one transport, including seek, pause, buffering, playback rate and end/restart. Original/Stems chooses the audible source. The playhead and waveform graphics are clipped within their lane so reaching the end cannot enlarge the page. Zoom may intentionally scroll inside the timeline.
-
-Space always toggles shared playback, including when controls or text inputs have focus. Ctrl+Enter runs the selected operation: Separate stems by default, or USS Extract after interacting with its section. Clicking or focusing either operation section selects it; the active heading and shortcut hint identify the current action. Execution still requires a source, ready engine and idle job, and USS needs an available target. Keyboard repeats are suppressed. No live user acceptance is implied by the implementation.
-
-USS detection defaults to Auto when the installed node advertises support. It scans existing two-second, half-overlap classifier windows and calibrates each class separately from confidence median, median absolute deviation and peak. There is no consecutive-window requirement, so isolated events remain eligible. A minimum evidence gate rejects very weak predictions. Auto does not measure the quietest audio sample or guarantee discovery of arbitrarily short or faint sounds; classifier scores are not amplitude or calibrated probabilities. This is an experimental heuristic, not an accuracy claim. Thresholds are logged in the ComfyUI console. Auto adds a classifier prepass for a single target; All already scans once. Slider movement selects Manual; Auto can be restored with its toggle. Older nodes retain Manual until setup updates them. No new weights or dependencies are needed.
-
-Run the 0.5.0 installer over the existing installation, keeping the same ComfyUI folder and selected packs. Verified models are reused. Allow the setup flow to update the integration and safely restart an idle ComfyUI so Auto is advertised. The agent does not run setup, inference or live playback.
-
-
-0.5.1 corrects Ctrl+Enter to run the selected operation rather than always USS. Interacting with the model/separation controls selects Separate stems; interacting with Find a sound selects USS. Selection remains when using the video or timeline.
-
-
-## 0.6.0 navigation, scale and video export
-
-The local media endpoint now implements GET/HEAD/OPTIONS, exact HTTP206 Content-Range/Content-Length, open-ended/suffix ranges and416 for invalid ranges. It streams only the requested bytes from registered media files, supports abort, and avoids relying on file-URL fetch behavior. This addresses a likely source of interior seeks landing at endpoints; real Electron playback remains user acceptance. Both waveform lanes and ruler accept click/drag to seek, using actual CSS coordinates at the current timeline/page zoom.
-
-Header minus/plus controls to the left of Connection settings scale the entire Electron webContents from60% to150%, including fonts, controls and HTML settings/export modals. Clicking the percentage restores100%; scale is remembered locally. Native OS file dialogs remain controlled by Windows. The waveform knob immediately left of timeline Zoom in supports vertical drag, wheel and arrow keys; Home/End choose bounds and double-click resets. It changes only per-track normalized graphical amplitude, not volume or exported audio. The waveform SVG occupies the central90% of its clip, preserving5% top/bottom margins even at maximum.
-
-Export video uses the current take through the official SDK/API Proxy. Current mix applies mute/solo/levels; Separate stem tracks embeds all original-level stems. Native `LoadVideo -> StemStudioVideo -> SaveVideo` preserves encoded video and writes lossless MKV/FLAC. Uploaded FLAC assets are attached through lightweight StemStudioVideoTrack nodes; no full video tensor is materialized. The standard native replacement-audio helper encodes AAC, so the custom VIDEO adapter implements lossless PyAV packet muxing behind the actual SaveVideo node. It is an extension of the native VIDEO contract, not an unmodified built-in audio replacement path. The server copies video packets in both modes; separate audio tracks copy FLAC packets, while the current mix is encoded as24-bit FLAC in4096-sample blocks with no loudness normalization. Mute/solo/gain are ignored for separate-track mode. Original source audio, subtitles, attachments and extra video streams are not included. Unusual timestamp/rotation/codec cases require live acceptance.
-
-There is no external FFmpeg executable search, selection, download or child process in the export path. The existing ComfyUI PyAV/FFmpeg libraries do the work in the engine. The desktop downloads exactly one MKV from the native SaveVideo output and publishes a unique temporary local file only after complete success. Cancellation uses the owned SDK job and aborts transfer. The server may retain completed output files after desktop cancellation. Missing native/export adapter nodes give a setup/restart error, with no local encoder fallback. Recent ComfyUI with the inspected native SaveVideo dynamic codec schema is required. MOV/ALAC from0.6.0 is removed; the native lossless path currently supports MKV only. No real codec/media processing is executed by the agent.
-
-Implementation follows official FFmpeg stream copy and audio-filter documentation: https://ffmpeg.org/ffmpeg.html#Streamcopy and https://ffmpeg.org/ffmpeg-filters.html .
-
-
-## 0.6.1 native export setup
-
-Run the0.6.1 installer over the existing app, preserve the same ComfyUI/model choices and allow the node update plus safe idle restart. No new model weights, FFmpeg executable or Python dependencies are required. Export itself checks only four targeted node definitions: LoadVideo, SaveVideo, StemStudioVideoTrack and StemStudioVideo. Old separation-only setups can still separate audio but must update integration before exporting. Uploaded video/FLAC assets are deduplicated by the official SDK; native SaveVideo results are retrieved from its output node. Some API Proxy versions label native PreviewVideo `images` outputs as image; the desktop accepts this legacy classification only for MKV files from the SaveVideo node.
-
-
-## 0.7.0 timeline workspace and range loop
-
-The Preview Original/Stems toggle is removed. Original source audio plays before decoded stems are available; after decoding, the active stem mix is routed automatically. The shared video element remains mounted during expanded timeline mode, so hiding Preview does not detach transport or discard decoded tracks.
-
-The expand/restore button immediately left of the waveform knob fills the application workspace with the timeline and take strip, hiding controls/Preview while keeping the app header. This is an in-app expanded layout, not OS/window fullscreen. Restoring keeps the previous panel split, mix and playhead. Drag the timeline top border up/down to resize the upper controls/Preview row; both upper panels retain equal height. Double-click resets the split. A keyboard-focusable horizontal separator supports Up/Down and Home/End, with bounds reserving timeline space even at large page zoom.
-
-Shift+left-drag a waveform lane or ruler to select a range, forward or backward. Selection appears across the aligned lanes and ruler; header controls display the bounds, loop lock and clear. An ordinary click still seeks and retains selection. Press loop lock to seek to selection start and play video/stems together repeatedly inside the selected interval. Unlock retains selection and allows normal playback beyond its end. Clear removes both selection and lock. A new selection unlocks the previous one; a different source clears range state. Selecting another take preserves the source range but pauses while its audio decodes. Preview looping does not trim/repeat exported audio/video. Full source exports remain unchanged.
-
-Loop boundaries are checked by the shared video-master transport; Web Audio source durations are capped to range end. Native media EOF also restarts a locked selection while explicit pause suppresses restart. Browser seeking may cause a gap or visible seek latency; this is not sample-accurate seamless looping. Actual sync and short-range behavior require user acceptance. Ranges shorter than20ms are treated as empty. The selection gesture does not auto-scroll beyond viewport edges.
-
-Hold the middle mouse button in the timeline scroll area and drag to pan horizontally/vertically with a hand cursor; wheel auto-scroll is suppressed for that gesture. Horizontal panning becomes useful after timeline zoom creates content wider than the viewport. Pointer capture/loss/cancel handling separates panning, selecting and seeking. Existing Space, Ctrl+Enter, layout zoom, waveform height knob, native SaveVideo and individual/batch stem downloads are retained.
+Node 22+: `npm ci`, `npm run dev`, `npm run build`, `npm test`. `npm run dist:win` builds `release/Stem-Studio-Setup.exe` and `release/Stem-Studio-Core.exe` (needs the .NET Framework C# compiler). Architecture notes are in `docs/`; agent handoff state is in `docs/HANDOFF.md`.

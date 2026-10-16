@@ -14,7 +14,7 @@ def model_root():
 def available_models():
     try:
         root = model_root()
-        return ['sfc'] + [key for key, path in PATHS.items() if (root / path).is_file()]
+        return [key for key, path in PATHS.items() if (root / path).is_file()] + ['sfc']
     except (OSError, ValueError, KeyError):
         return ['sfc']
 

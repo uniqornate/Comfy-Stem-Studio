@@ -32,7 +32,7 @@ function baseWorkflow(options = {}) {
     ...(visual ? { '6': { class_type: 'LoadVideo', inputs: { file: '' } } } : {}),
   };
   }
-  const graph = { '1': { class_type: 'LoadAudio', inputs: { audio: '' } }, '2': { class_type: 'StemStudioSeparate', inputs: { audio: ['1', 0], segment_seconds: 12, model: options.model || 'sfc' } } };
+  const graph = { '1': { class_type: 'LoadAudio', inputs: { audio: '' } }, '2': { class_type: 'StemStudioSeparate', inputs: { audio: ['1', 0], segment_seconds: 12, model: options.model || 'mrx' } } };
   CHANNELS.forEach((channel, i) => { graph[channel.node] = { class_type: 'SaveAudio', inputs: { audio: ['2', i], filename_prefix: `StemStudio/${channel.key}` } }; });
   return graph;
 }
@@ -135,7 +135,7 @@ export class Separation {
     if (this.active) throw new Error('A separation job is already active.');
     if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid separation options.');
     this.active = true; this.state = { phase: 'checking', message: 'Checking audio workflow…', stems: [], canCancel: false };
-    if (!['sfc', 'bandit', 'mrx'].includes(options.model || 'sfc')) { this.active = false; throw new Error('Unknown model.'); }
+    if (!['sfc', 'bandit', 'mrx'].includes(options.model || 'mrx')) { this.active = false; throw new Error('Unknown model.'); }
     if (options.mode && !['stems', 'uss', 'sam'].includes(options.mode)) { this.active = false; throw new Error('Unknown operation.'); }
     try { stemWorkflow(options); } catch (error) { this.active = false; throw error; }
     this.pending = this.run(profile, sourcePath, options).catch(error => { this.state.phase = 'failed'; this.state.message = error.message; }).finally(() => { this.active = false; this.job = null; this.state.canCancel = false; });
@@ -150,7 +150,7 @@ export class Separation {
     if (options.mode === 'uss' && options.target === 'All' && (options.threshold ?? 0.1) <= 0) throw new Error('All needs a detection threshold above zero.');
     if (options.mode === 'sam' && (!status.sam || typeof options.target !== 'string' || !options.target.trim() || options.target.length > 200)) throw new Error('SAM integration or target is unavailable. Update integration and prepare SAM Audio.');
     if (options.range && !status.detailRange) throw new Error('Range extraction needs the updated integration. Retry setup and restart idle ComfyUI.');
-    if (!['uss', 'sam'].includes(options.mode) && status.models && !status.models.includes(options.model || 'sfc')) throw new Error('This model is not installed. Select it in setup and restart ComfyUI.');
+    if (!['uss', 'sam'].includes(options.mode) && status.models && !status.models.includes(options.model || 'mrx')) throw new Error('This model is not installed. Select it in setup and restart ComfyUI.');
     if (options.samModel && !['small-tv','large-tv'].includes(options.samModel)) throw Error('Unsupported SAM model.');
     if (options.samModel === 'large-tv' && !status.samModels) throw Error('Update integration and restart idle ComfyUI to choose SAM Large.');
     if (options.edits && !status.editAudio) throw Error('Update integration and restart idle ComfyUI for edited-channel extraction.');
@@ -202,7 +202,7 @@ export class Separation {
       const id = randomUUID(); this.outputs.set(id, { path, native, name: options.parentId ? `${options.parentId.slice(0, 8)}-${channel.key}-${id.slice(0, 6)}.flac` : `${channel.key}.flac` });
       stems.push({ id, label: channel.label, size: info.size, url: this.expose(path), ...(options.parentId ? { parentId: options.parentId } : {}) });
     }
-    this.state = { phase: 'complete', message: `${selected.length} channels ready. Preview or save each channel, or download all.`, stems, canCancel: false, runId: randomUUID(), parentId: options.parentId, rootRunId: options.rootRunId, model: ['uss', 'sam'].includes(options.mode) ? `${options.mode.toUpperCase()} · ${options.target}` : options.model || 'sfc' };
+    this.state = { phase: 'complete', message: `${selected.length} channels ready. Preview or save each channel, or download all.`, stems, canCancel: false, runId: randomUUID(), parentId: options.parentId, rootRunId: options.rootRunId, model: ['uss', 'sam'].includes(options.mode) ? `${options.mode.toUpperCase()} · ${options.target}` : options.model || 'mrx' };
   }
   async cancel() { if (this.job && this.state.canCancel) { await this.job.cancel(); this.state.message = 'Cancellation requested. Waiting for ComfyUI to confirm.'; } return this.snapshot(); }
   output(id) { const value = this.outputs.get(id); if (!value) throw new Error('This stem is not available. Run separation first.'); return value; }

@@ -17,7 +17,7 @@ test('offline and legacy engines degrade without fabricated readings', async () 
   assert.equal(result.ram, null); assert.equal(result.gpuTemperature, null);
 });
 test('workspace defaults to SFC and All and restores selected action safely', () => {
-  assert.equal(preferences(null).target, 'All'); assert.equal(preferences('invalid').model, 'sfc');
+  assert.equal(preferences(null).target, 'All'); assert.equal(preferences('invalid').model, 'mrx');
   const last = { model: 'bandit', activeOperation: 'uss', target: 'Rain', autoThreshold: false, threshold: 0.23 };
   assert.deepEqual(preferences(JSON.stringify(last)), last);
   assert.equal(preferences('{"threshold":-2,"model":"unknown"}').threshold, 0.1);

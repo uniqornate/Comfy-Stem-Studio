@@ -88,6 +88,7 @@ function App() {
   const [target, setTarget] = useState(remembered.target);
   const [autoThreshold] = useState(remembered.autoThreshold);
   const [threshold] = useState(remembered.threshold);
+  useEffect(() => { const available = engine?.models; if (available?.length && !available.includes(model)) setModel(['mrx', 'bandit', 'sfc'].find(key => available.includes(key)) || available[0]); }, [engine?.models, model]);
   useEffect(() => { try { localStorage.setItem('workspacePreferences', JSON.stringify({ model, activeOperation, target, autoThreshold, threshold })); } catch {} }, [model, activeOperation, target, autoThreshold, threshold]);
   const currentRun = runs.find(run => run.runId === selectedRun) || runs.at(-1);
   const shownStems = currentRun?.stems || job.stems;

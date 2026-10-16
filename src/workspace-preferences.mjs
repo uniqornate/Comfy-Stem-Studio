@@ -2,7 +2,7 @@ export function preferences(raw) {
   let value; try { value = JSON.parse(raw || '{}'); } catch { value = {}; }
   value = value && typeof value === 'object' ? value : {};
   return {
-    model: ['sfc', 'bandit', 'mrx'].includes(value.model) ? value.model : 'sfc',
+    model: ['sfc', 'bandit', 'mrx'].includes(value.model) ? value.model : 'mrx',
     activeOperation: value.activeOperation === 'uss' ? 'uss' : 'stems',
     target: typeof value.target === 'string' && value.target.length < 200 ? value.target : 'All',
     autoThreshold: value.autoThreshold !== false,

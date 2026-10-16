@@ -27,7 +27,7 @@ class StemStudioSeparate:
     def IS_CHANGED(cls, **kwargs):
         return float("nan")
 
-    def separate(self, audio, segment_seconds, model="sfc"):
+    def separate(self, audio, segment_seconds, model="mrx"):
         if model != "sfc":
             from .extra_nodes import separate_alternative
             return separate_alternative(audio, model, min(segment_seconds, 8))
