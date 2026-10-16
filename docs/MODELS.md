@@ -1,0 +1,26 @@
+# Candidate model files, version 0.1.2
+
+These are optional evaluation candidates. No audio model execution, ComfyUI custom node, dependency installation, separation benchmark or VRAM measurement is included in this build. Download size is not a VRAM estimate. The main candidate's superiority over BandIt on the user's film is unverified.
+
+| Pack | Purpose | Download | License |
+|---|---|---:|---|
+| SFC-Locoformer Medium / DnR / SFC-CA | Dialogue, music and effects separation evaluation | 128,212,278 bytes | Weights CC BY-NC-SA 4.0 |
+| USS at_soft, full training + PANNs Cnn14 | Named class-based detail extraction evaluation | 1,448,454,867 bytes | USS Apache 2.0; PANNs checkpoint CC BY 4.0 |
+
+SFC uses the author's pinned revision `0827e70a9e0c6f21b9b46cb9dfe4f7e4ebd307c5` and the DnR checkpoint, not its MUSDB music-stem checkpoint. See [author repository](https://github.com/b-sigpro/spectral-feature-compression) and [weights](https://huggingface.co/kohei0209/spectral_feature_compression). The non-commercial and share-alike requirements apply independently of this app being open source. Competition/prize and later commercial eligibility are not confirmed by selecting this checkpoint.
+
+USS uses the [ByteDance implementation](https://github.com/bytedance/uss). Its at_soft checkpoint and config are downloaded from the third-party [RSNuts mirror](https://huggingface.co/RSNuts/Universal_Source_Separation), pinned at `3053b3c087ff5d32993a849ee44133021a3e0ba4`. Mirror integrity is pinned; this is not a claim that the mirror is maintained by ByteDance. The accompanying PANNs Cnn14 checkpoint is from the [author's Zenodo record](https://zenodo.org/records/3987831), which provides CC BY 4.0 metadata and MD5. The other checkpoint/config files use SHA-256. HTTPS is required. This build does not deserialize checkpoint files.
+
+USS class tagging is a candidate for AudioSet classes such as footsteps. Its model/config uses 32 kHz mono. Automatic class selection, time localization, overlapping effects, source reconstruction, licensing attribution packaging and stereo preservation still require runtime implementation and user-led quality checks. It is not an automatic guarantee of one clean stem for every audible event.
+
+The manifest pins expected bytes and hashes. Large weights were not downloaded during implementation. Tiny YAML configs were fetched to compute their pinned SHA-256 values. There is no measured combined VRAM claim yet; a future serial model lifecycle should unload the separator before loading USS/PANNs and measure peak allocation with the actual workflow.
+
+Since 0.1.6, PANNs downloads first from the third-party [thelou1s mirror](https://huggingface.co/thelou1s/panns-inference/blob/5546cbe0c06a7695a23c041ef5e6dab76b3312d6/Cnn14_mAP%3D0.431.pth), pinned at revision 5546cbe0c06a7695a23c041ef5e6dab76b3312d6. Its published size is 327428481 bytes and SHA-256 is 0dc499e40e9761ef5ea061ffc77697697f277f6a960894903df3ada000e34b31. The original Zenodo MD5 remains mandatory in addition to this SHA-256; original weight license/attribution is retained despite the mirror card's Apache label. Byte identity is enforced when downloaded, not claimed from having downloaded the binary during development. Zenodo remains the request-failure fallback. Actual speed is user-unverified.
+
+## 0.4.0 additions
+
+The installer now offers BandIt v2 multilingual (446680129 bytes, official Zenodo MD5 fea2868787551b0cff36cfcf7c3622a3, CC BY-SA 4.0 weights) and MERL MRX adapted-loudness (122317657 bytes, Git LFS SHA256 4bc4eabf554cf980d3328a2c45452c47beca1ca76324d75583e7587377dce409, MIT). URLs/revisions are pinned in setup/models.json. MRX is a downloadable cinematic baseline, not an assertion that it beats SFC/BandIt. USS at_soft/PANNs previously offered as weights now have an experimental class-conditioned extraction adapter. Model binaries are not embedded in the application package; only consenting user setup prepares them in ComfyUI/models/audio_separation. Their runtime quality/performance remains to be tested by the user.
+
+## 0.4.1 transport and BandIt source update
+
+Pinned third-party BandIt mirror: https://huggingface.co/jsoncx/bandit-v2/tree/fde0ff714b879259f3f436a0eb9046626f82a880 . Published metadata lists original-sized checkpoint-multi.ckpt (446680129 bytes), SHA256 abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc. Downloader requires original Zenodo MD5 in addition to that hash, with Zenodo fallback. Mirror repository license does not replace the original weight license. Only metadata was read during this change; no model binary downloaded or executed by the agent. All five large checkpoint files share four concurrent 8 MiB range tasks, per-range resume/retry/slow-source recovery and mandatory full-model hashes. No new mirror was invented for other models; configured original pinned sources remain.
