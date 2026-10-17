@@ -12,6 +12,10 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 - Experimental GuideSep separation: hum or play a reference and pull the matching instrument from music, on the whole source or on a channel range.
 - Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
 
+## Use the backend without the app
+
+Every operation runs as a ComfyUI graph built from the `StemStudio` custom nodes. Ready-made workflows (separate stems, named sound, SAM Audio, GuideSep, chained stems + footsteps) live in [`workflows/`](workflows/README.md), in graph format for the ComfyUI interface and API format for scripts.
+
 ## Requirements
 
 - Windows 10/11 and a local ComfyUI (portable or venv) with a recent ComfyUI build.
