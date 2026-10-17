@@ -5,7 +5,6 @@ export type Source = { name: string; size: number; url: string; missing?: boolea
 export type Engine = { ready: boolean; message: string; guidesep?: boolean; detailRange?: boolean; sam?: boolean; samPrompts?: boolean; samVisual?: boolean; samModels?: boolean; editAudio?: boolean; models?: string[]; targets?: string[]; autoThreshold?: boolean };
 export type SAMGuidance = { description?: string; anchors?: { kind: '+' | '-'; start: number; end: number }[]; visual?: { keyframes: { time: number; box: { x: number; y: number; width: number; height: number } }[] }; predictSpans?: boolean; visualOnly?: boolean };
 export type SeparationOptions = { mode?: 'stems' | 'uss' | 'sam' | 'guidesep'; referenceUrl?: string; range?: { start: number; end: number }; parentId?: string; rootRunId?: string; model?: string; target?: string; threshold?: number; autoThreshold?: boolean; edits?: import('./clip-edits.mjs').ChannelEdit; samModel?: 'small-tv' | 'large-tv'; sam?: SAMGuidance; videoUrl?: string };
-export type EngineInstall = { phase: string; message: string; detail: string; current: number; total: number };
 export type Stem = { id: string; label: string; size: number; url: string; parentId?: string; missing?: boolean };
 export type StemJob = { phase: string; message: string; stems: Stem[]; canCancel: boolean; runId?: string; parentId?: string; rootRunId?: string; model?: string };
 export type VideoExportOptions = { sourceUrl: string; stems: { id: string; label: string; mute: boolean; solo: boolean; level: number; edits?: import('./clip-edits.mjs').ChannelEdit }[]; mode: 'mix' | 'tracks'; format: 'mkv'; duration: number };
@@ -44,8 +43,6 @@ export interface Desktop {
   startProxy(profile: Profile): Promise<ProxyState>;
   stopProxy(): Promise<ProxyState>;
   checkEngine(profile: Profile): Promise<Engine>;
-  installEngine(profile: Profile): Promise<Engine>;
-  engineInstallStatus(): Promise<EngineInstall>;
   separateStems(profile: Profile, sourceUrl: string, options?: SeparationOptions): Promise<StemJob>;
   stemStatus(): Promise<StemJob>;
   cancelSeparation(): Promise<StemJob>;

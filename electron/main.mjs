@@ -14,7 +14,7 @@ import { resources } from './resources.mjs';
 import { VideoExporter } from './video-export.mjs';
 import { mediaResponse } from './media-response.mjs';
 import { ProxyManager } from './proxy-manager.mjs';
-import { Separation, engineStatus, installEngine } from './separation.mjs';
+import { Separation, engineStatus } from './separation.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sources = new Map();
@@ -25,7 +25,6 @@ let separation;
 let samManager, guidesepManager;
 let audioRenderer;
 const videoExporter = new VideoExporter();
-let engineInstallState = { phase: 'idle', message: '', detail: '', current: 0, total: 0 };
 protocol.registerSchemesAsPrivileged([{ scheme: 'app-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) app.quit();
@@ -129,24 +128,6 @@ app.whenReady().then(async () => {
     return videoExporter.run(sanitize(profile), source, stems, options, choice.filePath);
   });
   handle('engine:check', profile => engineStatus(sanitize(profile)));
-  handle('engine:install-status', () => ({ ...engineInstallState }));
-  handle('engine:install', async profile => {
-    if (separation.active) throw new Error('Wait for the active separation before installing the integration.');
-    if (['choosing', 'verifying', 'copying'].includes(engineInstallState.phase)) throw new Error('Integration installation is already active.');
-    engineInstallState = { phase: 'choosing', message: 'Choose the model folder', detail: 'Select models or sfc-locoformer-dnr. No new model download is needed.', current: 0, total: 0 };
-    try {
-      const clean = sanitize(profile);
-      const selection = await dialog.showOpenDialog(window, { title: 'Select models or sfc-locoformer-dnr', defaultPath: join(process.env.LOCALAPPDATA || app.getPath('userData'), 'Stem Studio', 'models'), properties: ['openDirectory'] });
-      if (selection.canceled) { engineInstallState.phase = 'cancelled'; engineInstallState.message = 'Model folder selection cancelled. No installation was completed.'; return { ready: false, message: engineInstallState.message }; }
-      const nodeSource = app.isPackaged ? join(process.resourcesPath, 'comfy_nodes', 'StemStudio') : join(here, '../comfy_nodes/StemStudio');
-      const result = await installEngine(clean, nodeSource, selection.filePaths[0], patch => Object.assign(engineInstallState, patch));
-      let saved; try { saved = sanitize(JSON.parse(await readFile(profilePath(), 'utf8'))); } catch { saved = { ...defaults }; }
-      saved.installation = clean.installation;
-      await mkdir(dirname(profilePath()), { recursive: true }); await writeFile(profilePath(), JSON.stringify(saved, null, 2));
-      Object.assign(engineInstallState, { phase: 'complete', message: 'Integration installed. Restart ComfyUI to load it.', detail: result.message, current: 1, total: 1 });
-      return result;
-    } catch (error) { Object.assign(engineInstallState, { phase: 'error', message: 'Integration was not completed.', detail: error.message }); throw error; }
-  });
   handle('stems:start', async (profile, sourceUrl, options) => {
     await ensureProject();
     let source;

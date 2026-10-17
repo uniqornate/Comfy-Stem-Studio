@@ -25,8 +25,6 @@ contextBridge.exposeInMainWorld('desktop', Object.freeze({
   startProxy: (profile) => ipcRenderer.invoke('proxy:start', profile),
   stopProxy: () => ipcRenderer.invoke('proxy:stop'),
   checkEngine: (profile) => ipcRenderer.invoke('engine:check', profile),
-  installEngine: (profile) => ipcRenderer.invoke('engine:install', profile),
-  engineInstallStatus: () => ipcRenderer.invoke('engine:install-status'),
   separateStems: (profile, sourceUrl, options) => ipcRenderer.invoke('stems:start', profile, sourceUrl, options),
   stemStatus: () => ipcRenderer.invoke('stems:status'),
   cancelSeparation: () => ipcRenderer.invoke('stems:cancel'),

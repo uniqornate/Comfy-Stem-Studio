@@ -129,7 +129,6 @@ function App() {
     window.addEventListener('keydown', keydown, true);
     return () => window.removeEventListener('keydown', keydown, true);
   }, []);
-  const input = useRef<HTMLInputElement>(null);
   const projectInitialized = useRef(false);
   function hydrateProject(value: ProjectSession) {
     transport.pause();
@@ -238,7 +237,6 @@ function App() {
     const timer = setInterval(read, jobIdle ? 3000 : 1000);
     return () => { active = false; clearInterval(timer); };
   }, [jobIdle]);
-  useEffect(() => () => { if (source?.url.startsWith('blob:')) URL.revokeObjectURL(source.url); }, [source]);
   useEffect(() => {
     if (job.phase !== 'complete' || !job.runId) return;
     if (job.parentId && job.rootRunId) {
@@ -342,8 +340,7 @@ function App() {
   }
   async function openVideo() {
     setError('');
-    if (!window.desktop) { input.current?.click(); return; }
-    try { const next = await window.desktop.openVideo(); if (next) await projectAction('source', next); } catch (cause) { setError(String(cause)); }
+    try { const next = await window.desktop?.openVideo(); if (next) await projectAction('source', next); } catch (cause) { setError(String(cause)); }
   }
   return <div className="app-shell studio-workspace">
     <TooltipLayer/>
@@ -397,7 +394,6 @@ function App() {
       <div className="modal-actions"><span className="subtle">{projectBusy ? 'Preparing project…' : 'Autosave on · resume last project'}</span><button className="primary-button" disabled={projectBusy} onClick={() => { void flushProject().then(() => setProjectsOpen(false)).catch(cause => setError(String(cause))); }}><Save size={14}/> Save</button></div>
     </section></div>}
     {exportOpen && <div className="modal-backdrop"><section className="connection-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title"><div className="modal-top"><span className="eyebrow"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/> VIDEO EXPORT</span><button className="icon-button" disabled={videoExporting} onClick={() => setExportOpen(false)} aria-label="Close export"><X size={18}/></button></div><h2 id="export-title">Keep the picture.</h2><p className="modal-description">Saved by ComfyUI. Original video + lossless FLAC audio.</p><label>Audio<select value={exportMode} disabled={videoExporting} onChange={event => setExportMode(event.target.value as 'mix' | 'tracks')}><option value="mix">Current mix · mute, solo and levels</option><option value="tracks">Separate stem tracks · original levels</option></select></label><p className="helper">{exportMode === 'tracks' ? 'Embeds every stem as a separate selectable audio track. Mixer controls are ignored.' : 'Replaces the source audio with the current stem mix.'} MKV · native ComfyUI SaveVideo.</p>{videoExporting && <div role="status"><progress max="1" value={exportState.progress}/><p className="helper">{exportState.message}</p></div>}{error && <p className="error-banner" role="alert">{error}</p>}<div className="modal-actions">{videoExporting ? <button className="secondary-button" onClick={() => void window.desktop?.cancelExport().catch(cause => setError(String(cause)))}>Cancel export</button> : <button className="secondary-button" onClick={() => setExportOpen(false)}>Cancel</button>}<button className="primary-button" disabled={videoExporting || !playback.duration} onClick={() => void exportVideo()}>{videoExporting ? 'Exporting…' : 'Export video'}</button></div></section></div>}
-    <input ref={input} type="file" accept="video/*,audio/*,.mkv,.flac,.opus" hidden onChange={event => { const file = event.target.files?.[0]; if (file) { setMediaError(false); setSource({ name: file.name, size: file.size, url: URL.createObjectURL(file) }); } }}/>
     {settings && <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget && !busy && !saving && !proxyWorking) setSettings(false); }}>
       <section className="connection-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
         <header><span className="mini-title"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/><strong id="connection-title">Connection</strong></span><button className="icon-button" aria-label="Close connection settings" disabled={busy || saving || proxyWorking} onClick={() => setSettings(false)}><X size={15}/></button></header>
