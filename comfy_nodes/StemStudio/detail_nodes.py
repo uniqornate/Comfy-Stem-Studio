@@ -110,3 +110,63 @@ class StemStudioSAM:
                 wave, rate = sf.read(folder / (name + '.flac'), always_2d=True, dtype='float32')
                 outputs.append({'waveform': torch.from_numpy(wave.T.copy()).unsqueeze(0), 'sample_rate': rate})
             return tuple(outputs)
+
+
+class StemStudioGuideSep:
+    """User-guided music separation (GuideSep, MIT). Runs in a private runtime prepared from the app."""
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {'required': {'audio': ('AUDIO',), 'reference': ('AUDIO',), 'steps': ('INT', {'default': 8, 'min': 4, 'max': 24, 'step': 1})}}
+    RETURN_TYPES = ('AUDIO', 'AUDIO')
+    RETURN_NAMES = ('target', 'remainder')
+    FUNCTION = 'extract'
+    CATEGORY = 'Stem Studio'
+
+    def extract(self, audio, reference, steps=8):
+        import json
+        import os
+        import subprocess
+        import tempfile
+        import time
+        from pathlib import Path
+        import soundfile as sf
+        import torch
+        import comfy.model_management as mm
+        from .extra_nodes import model_root
+        model = model_root() / 'guidesep-v1'
+        try:
+            config = json.loads((model / 'stem-runtime.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raise ValueError('Prepare GuideSep in Stem Studio first.')
+        python = Path(config['python'])
+        weights = model / 'guidesep.pt'
+        if not python.is_file() or not weights.is_file():
+            raise ValueError('GuideSep runtime or weights are missing. Retry Prepare GuideSep.')
+        device = str(mm.get_torch_device())
+        if not device.startswith('cuda'):
+            raise ValueError('GuideSep needs a CUDA device in this experimental integration.')
+        mm.unload_all_models(); mm.soft_empty_cache()
+        with tempfile.TemporaryDirectory(prefix='stem-guidesep-') as directory:
+            folder = Path(directory)
+            for name, item in [('input.wav', audio), ('reference.wav', reference)]:
+                sf.write(folder / name, item['waveform'][0].float().cpu().numpy().T, int(item['sample_rate']), subtype='FLOAT')
+            (folder / 'request.json').write_text(json.dumps({'weights': str(weights), 'device': device, 'steps': int(steps)}), encoding='utf-8')
+            env = dict(os.environ)
+            for key in ['PYTHONHOME', 'PYTHONPATH', 'ELECTRON_RUN_AS_NODE']:
+                env.pop(key, None)
+            with (folder / 'worker.log').open('wb') as log:
+                process = subprocess.Popen([str(python), str(Path(__file__).with_name('guidesep_worker.py')), str(folder)], env=env, stdout=log, stderr=log, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                try:
+                    while process.poll() is None:
+                        mm.throw_exception_if_processing_interrupted(); time.sleep(0.2)
+                    if process.returncode:
+                        detail = (folder / 'worker.log').read_text(encoding='utf-8', errors='replace')[-2000:]
+                        raise RuntimeError('GuideSep failed: ' + detail)
+                finally:
+                    if process.poll() is None:
+                        process.kill(); process.wait()
+            outputs = []
+            for name in ['target', 'remainder']:
+                wave, rate = sf.read(folder / (name + '.flac'), always_2d=True, dtype='float32')
+                outputs.append({'waveform': torch.from_numpy(wave.T.copy()).unsqueeze(0), 'sample_rate': rate})
+            return tuple(outputs)

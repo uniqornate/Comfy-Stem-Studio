@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AudioLines, ArrowLeft, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
-import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportState, Stem, SAMGuidance, ProjectInfo, ProjectSession, ProjectPayload, TimelineView } from './types';
+import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportState, Stem, SAMGuidance, ProjectInfo, ProjectSession, ProjectPayload, TimelineView, ReferenceAudio } from './types';
 import './styles.css';
 const comfyWordmark = new URL('./assets/comfy/comfy-wordmark.svg', import.meta.url).href;
 const comfyIcon = comfyWordmark;
@@ -11,6 +11,15 @@ import { workspaceTop } from './timeline-geometry.mjs';
 import { preferences } from './workspace-preferences.mjs';
 import { ResourceMonitor } from './ResourceMonitor';
 import { MediaTransport } from './media-transport.mjs';
+import { TooltipLayer } from './Tooltip';
+import { ModelPicker } from './ModelPicker';
+import { MODELS, modelName } from './models.mjs';
+import { SAMPrepare, SAMVariantSwitch, useSAMStatus } from './SAMPrepare';
+import { SAMGuidanceEditor } from './SAMGuidanceEditor';
+import { GuideSepPanel, useGuideSepStatus } from './GuideSepPanel';
+import { normalizeGuidance } from './sam-guidance.mjs';
+const STEM_MODELS = ['mrx', 'bandit', 'sfc'];
+const AUDIO_SOURCE = /\.(mp3|wav|flac|m4a|aac|ogg|opus)$/i;
 
 const initial: Profile = { comfyUrl: 'http://127.0.0.1:8188', proxyUrl: 'http://127.0.0.1:8189', installation: '', managedProxy: false, setupComplete: false };
 function App() {
@@ -73,6 +82,10 @@ function App() {
   const [lastGuidance, setLastGuidance] = useState<SAMGuidance | undefined>(undefined);
   const [samVariant, setSAMVariant] = useState<'small-tv' | 'large-tv'>('small-tv');
   const [detailMode, setDetailMode] = useState<'uss' | 'sam'>('uss');
+  const [sourceGuidance, setSourceGuidance] = useState<SAMGuidance>({});
+  const [reference, setReference] = useState<ReferenceAudio | null>(null);
+  const [sam, setSAM] = useSAMStatus(profile, samVariant);
+  const [guide, setGuide] = useGuideSepStatus(profile);
   const [floatPosition, setFloatPosition] = useState({ x: Math.max(8, window.innerWidth - 340), y: 90 });
   const [floatSize, setFloatSize] = useState({ width: 320, height: 180 });
   const floatResize = useRef<{ edge: string; x: number; y: number; width: number; height: number; left: number; top: number } | null>(null);
@@ -88,11 +101,13 @@ function App() {
   const [target, setTarget] = useState(remembered.target);
   const [autoThreshold] = useState(remembered.autoThreshold);
   const [threshold] = useState(remembered.threshold);
-  useEffect(() => { const available = engine?.models; if (available?.length && !available.includes(model)) setModel(['mrx', 'bandit', 'sfc'].find(key => available.includes(key)) || available[0]); }, [engine?.models, model]);
+  useEffect(() => { const available = engine?.models; if (STEM_MODELS.includes(model) && available?.length && !available.includes(model)) setModel(['mrx', 'bandit', 'sfc'].find(key => available.includes(key)) || available[0]); }, [engine?.models, model]);
   useEffect(() => { try { localStorage.setItem('workspacePreferences', JSON.stringify({ model, activeOperation, target, autoThreshold, threshold })); } catch {} }, [model, activeOperation, target, autoThreshold, threshold]);
   const currentRun = runs.find(run => run.runId === selectedRun) || runs.at(-1);
   const shownStems = currentRun?.stems || job.stems;
-  const modelNames: Record<string, string> = { sfc: 'SFC-Locoformer', bandit: 'BandIt v2 · multilingual', mrx: 'MERL MRX · adapted loudness' };
+  const modelNames: Record<string, string> = Object.fromEntries(MODELS.map(item => [item.id, item.name]));
+  const modelKind = MODELS.find(item => item.id === model)?.kind || 'stems';
+  const sourceIsAudio = !!source && AUDIO_SOURCE.test(source.name);
   const [transport] = useState(() => new MediaTransport());
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const [playback, setPlayback] = useState(transport.snapshot());
@@ -227,20 +242,36 @@ function App() {
   const proxyWorking = preparingProxy || ['checking', 'downloading', 'installing', 'starting'].includes(proxyState?.phase || '');
   const jobBusy = !['idle', 'complete', 'failed', 'cancelled'].includes(job.phase);
   const canSeparate = !!window.desktop && !!source && !source.missing && !!connected && !!engine?.ready && !jobBusy && !projectBusy;
-  const separationHint = !source ? 'Choose a source video first.' : !connected ? 'Check your ComfyUI and proxy connection first.' : !engine?.ready ? 'Audio engine is not ready. Check connection settings or retry setup.' : 'SFC DnR: three mono stems at 44.1 kHz. The original video stays untouched.';
+  const wholeRange = { start: 0, end: playback.duration };
+  let sourceGuidanceError = '';
+  if (modelKind === 'prompt') { try { if (!sourceGuidance.visualOnly && !sourceGuidance.description?.trim()) throw Error('Describe the sound you want, or draw a visual target.'); normalizeGuidance(sourceGuidance, wholeRange); } catch (cause) { sourceGuidanceError = cause instanceof Error ? cause.message : String(cause); } }
+  const samReady = !!engine?.sam && !!engine?.samPrompts && !!sam?.ready;
+  const guideReady = !!engine?.guidesep && !!guide?.ready && !!reference;
+  const modelReady = modelKind === 'stems' || (playback.duration > 0 && (modelKind === 'prompt' ? samReady && !sourceGuidanceError : guideReady));
+  const runLabel = modelKind === 'stems' ? 'Separate stems' : modelKind === 'prompt' ? 'Extract sound' : 'Separate with reference';
+  const separationHint = !source ? 'Choose a source first.' : !connected ? 'Check your ComfyUI and proxy connection first.' : !engine?.ready ? 'Audio engine is not ready. Check connection settings or retry setup.' : modelKind === 'prompt' ? (!samReady ? 'Prepare SAM Audio first.' : sourceGuidanceError || 'SAM Audio pulls the described sound from the whole source.') : modelKind === 'reference' ? (!guideReady ? 'Prepare GuideSep and choose a reference sound first.' : 'GuideSep pulls the instrument that matches your reference.') : 'Three mono stems. The original source stays untouched.';
   async function separate() {
-    if (!window.desktop || !source || !canSeparate) return;
+    if (!window.desktop || !source || !canSeparate || !modelReady) return;
     setError(''); setSaveNotice('');
-    try { setJob(await window.desktop.separateStems(profile, source.url, { model, mode: 'stems' })); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    try {
+      if (modelKind === 'prompt') {
+        const label = sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description!.trim();
+        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'sam', samModel: samVariant, target: label, threshold: 0.1, range: wholeRange, sam: sourceGuidance, videoUrl: source.url }));
+      } else if (modelKind === 'reference' && reference) {
+        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, range: wholeRange }));
+      } else setJob(await window.desktop.separateStems(profile, source.url, { model, mode: 'stems' }));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
-  async function extractDetail(request: DetailRequest, mode: 'uss' | 'sam' = 'uss', chosen = 'All', guidance?: SAMGuidance) {
+  async function extractDetail(request: DetailRequest, mode: 'uss' | 'sam' | 'guidesep' = 'uss', chosen = 'All', guidance?: SAMGuidance, referenceAudio?: ReferenceAudio) {
     if (!window.desktop || !canSeparate || !currentRun?.runId) return;
     if (!shownStems.some(stem => stem.id === request.stem.id)) return;
-    setActiveOperation('uss'); setDetailRequest(request); setDetailMode(mode); setTarget(chosen); setLastGuidance(guidance); setDetailOpen(false);
+    setActiveOperation('uss'); setDetailRequest(request); setDetailMode(mode === 'sam' ? 'sam' : 'uss'); setTarget(chosen); setLastGuidance(guidance); setDetailOpen(false);
     setError(''); setSaveNotice('');
-    try { setJob(await window.desktop.separateStems(profile, request.stem.url, { mode, samModel: mode === "sam" ? samVariant : undefined, target: chosen, threshold: 0.1, autoThreshold: mode === 'uss', range: { start: request.start, end: request.end }, parentId: request.stem.id, rootRunId: currentRun.runId, edits: timelines.current[currentRun.runId]?.edits?.[request.stem.id], ...(mode === 'sam' && guidance ? { sam: guidance, videoUrl: source?.url } : {}) })); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    const base = { range: { start: request.start, end: request.end }, parentId: request.stem.id, rootRunId: currentRun.runId, edits: timelines.current[currentRun.runId]?.edits?.[request.stem.id] };
+    try {
+      if (mode === 'guidesep') setJob(await window.desktop.separateStems(profile, request.stem.url, { ...base, mode: 'guidesep', target: chosen, referenceUrl: referenceAudio?.url }));
+      else setJob(await window.desktop.separateStems(profile, request.stem.url, { ...base, mode, samModel: mode === 'sam' ? samVariant : undefined, target: chosen, threshold: 0.1, autoThreshold: mode === 'uss', ...(mode === 'sam' && guidance ? { sam: guidance, videoUrl: source?.url } : {}) }));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   function details(stem: Stem, start: number, end: number, picker: boolean) {
     const request = { stem, start, end }; setDetailRequest(request); setActiveOperation('uss');
@@ -305,6 +336,7 @@ function App() {
     try { const next = await window.desktop.openVideo(); if (next) await projectAction('source', next); } catch (cause) { setError(String(cause)); }
   }
   return <div className="app-shell studio-workspace">
+    <TooltipLayer/>
     <header className="topbar"><div className="brand"><img className="primary-comfy-logo" src={comfyWordmark} alt="Comfy"/><span className="stem-wordmark">Stem Studio</span></div><button className="project-switch" onClick={() => void showProjects()} title={project?.path || "Projects"} disabled={!project || projectBusy}><FolderOpen size={14}/><span>{project?.name || "Project"}</span><small>{projectStatus}</small></button><ResourceMonitor profile={profile}/><div className="topbar-right"><div className="layout-zoom" aria-label="Layout scale"><button className="icon-button" aria-label="Zoom layout out" disabled={layoutZoom <= 0.6} onClick={() => setLayoutZoom(value => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))}><ZoomOut size={15}/></button><button className="zoom-reset" title="Reset layout scale" onClick={() => setLayoutZoom(1)}>{Math.round(layoutZoom * 100)}%</button><button className="icon-button" aria-label="Zoom layout in" disabled={layoutZoom >= 1.5} onClick={() => setLayoutZoom(value => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))}><ZoomIn size={15}/></button></div><button className={`connection-pill ${connected ? 'online' : ''}`} onClick={() => setSettings(true)} title="Connection settings" aria-label="Connection settings"><span className="status-dot"/><Settings2 size={16}/></button></div></header>
     <main ref={workspaceMain} className={`workspace-main ${timelineExpanded ? 'timeline-expanded' : ''}`} style={{ '--workspace-height': `${topHeight}px` } as React.CSSProperties}>
       <div className="workspace-grid">
@@ -312,11 +344,19 @@ function App() {
           <div className="panel-heading"><h2>Soundtrack</h2><span className="badge">LOCAL</span></div>
           <div className="control-content" tabIndex={0} aria-label="Soundtrack controls">
             <span className="section-label">SOURCE</span>
-            <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={20}/></span><span className="source-description"><strong>{source ? source.name : 'Add your video'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB · Original source` : 'MP4, MOV, WebM and more'}</small></span><Plus size={16}/></button>
+            <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={20}/></span><span className="source-description"><strong>{source ? source.name : 'Add video or audio'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB · Original source` : 'MP4, MOV, MKV, MP3, WAV, FLAC and more'}</small></span><Plus size={16}/></button>
             <div className={`operation-section ${activeOperation === 'stems' ? 'is-selected' : ''}`} onFocusCapture={() => setActiveOperation('stems')} onPointerDownCapture={() => setActiveOperation('stems')}>
-            <div className="section-title"><span className="section-label">STEM SEPARATION</span><span className="subtle">3 MODELS</span></div>
-            <label className="model-label">Separation model<select value={model} disabled={jobBusy} onChange={event => setModel(event.target.value)}>{Object.entries(modelNames).map(([key, label]) => <option key={key} value={key} disabled={!(engine?.models || ['sfc']).includes(key)}>{label}{!(engine?.models || ['sfc']).includes(key) ? ' · select in setup' : ''}</option>)}</select></label>
-            <button className="primary-button" disabled={!canSeparate} onClick={separate} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? 'Separating stems' : 'Separate stems'}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
+            <div className="section-title"><span className="section-label">STEM SEPARATION</span><span className="subtle">{MODELS.length} MODELS</span></div>
+            <ModelPicker value={model} onChange={setModel} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, guidesep: engine ? !!engine.guidesep : undefined }}/>
+            <p className="model-caption">{modelName(model)}</p>
+            {modelKind === 'prompt' && <div className="model-options">
+              <SAMVariantSwitch variant={samVariant} setVariant={setSAMVariant} disabled={jobBusy} largeAvailable={!!engine?.samModels} reset={() => setSAM(null)}/>
+              {playback.duration > 0 ? <SAMGuidanceEditor key={`${source?.url}:${playback.duration}`} range={wholeRange} sourceUrl={source?.url || ''} value={sourceGuidance} change={setSourceGuidance} supported={!!engine?.samPrompts} visualSupported={!!engine?.samVisual && !sourceIsAudio}/> : <p className="helper">Open a source to describe the sound you want.</p>}
+              <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={samVariant} busy={jobBusy}/>
+              {source && playback.duration > 0 && sourceGuidanceError && samReady && <p className="helper">{sourceGuidanceError}</p>}
+            </div>}
+            {modelKind === 'reference' && <div className="model-options"><GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} busy={jobBusy}/></div>}
+            <button className="primary-button" disabled={!canSeparate || !modelReady} onClick={separate} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
             {(jobBusy || job.phase === 'failed' || job.phase === 'cancelled') && <p className="helper" role="status">{job.message}</p>}
             {job.canCancel && <button className="quiet-button" onClick={() => window.desktop?.cancelSeparation().then(setJob).catch(cause => setError(String(cause)))}>Cancel separation</button>}
             </div>
@@ -326,15 +366,14 @@ function App() {
         <section className={`panel preview-panel ${timelineExpanded && source ? 'floating-preview' : ''}`} style={timelineExpanded ? { left: floatPosition.x, top: floatPosition.y, width: floatSize.width, height: floatSize.height, maxWidth: "none", aspectRatio: "auto" } : undefined} onClick={() => { if (timelineExpanded && !floatMoved.current) void transport.toggle(); floatMoved.current = false; }}
           onPointerDown={event => { if (!timelineExpanded || !source || event.button !== 0) return; floatMoved.current = false; floatDrag.current = { x: event.clientX, y: event.clientY, left: floatPosition.x, top: floatPosition.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); }}
           onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - event.currentTarget.offsetWidth, drag.left + dx)), y: Math.max(0, Math.min(window.innerHeight - event.currentTarget.offsetHeight, drag.top + dy)) }); }}
-          onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloat} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video</button></div>}</div><div className="preview-footer"><button className="icon-button" disabled={!playback.duration} onClick={() => void transport.toggle()} aria-label={playback.playing ? 'Pause video' : 'Play video'} title="Space">{playback.playing ? <Pause size={16}/> : <Play size={16}/>}</button><input type="range" min="0" max={playback.duration || 1} step="0.01" value={playback.position} onChange={event => transport.seek(Number(event.target.value))} aria-label="Video playhead"/><output>{playback.position.toFixed(1)} / {playback.duration.toFixed(1)}</output></div></section>
+          onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloat} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><div className="preview-footer"><button className="icon-button" disabled={!playback.duration} onClick={() => void transport.toggle()} aria-label={playback.playing ? 'Pause video' : 'Play video'} title="Space">{playback.playing ? <Pause size={16}/> : <Play size={16}/>}</button><input type="range" min="0" max={playback.duration || 1} step="0.01" value={playback.position} onChange={event => transport.seek(Number(event.target.value))} aria-label="Video playhead"/><output>{playback.position.toFixed(1)} / {playback.duration.toFixed(1)}</output></div></section>
       </div>
-      {<div className="result-takes" role="group" aria-label="Compare model takes">{runs.map((run, index) => <button key={run.runId} className={currentRun?.runId === run.runId ? 'selected' : ''} onClick={() => { setSelectedRun(run.runId!); setDetailRequest(null); setDetailOpen(false); }}>{String(index + 1).padStart(2, '0')} · {modelNames[run.model || ''] || run.model}</button>)}</div>}
-      <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
+      <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={id => { setSelectedRun(id); setDetailRequest(null); setDetailOpen(false); }} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
       {saveNotice && !settings && <p className="save-notice" role="status"><Check size={14}/>{saveNotice}</p>}
       {error && !settings && <p className="error-banner" role="alert">{error}</p>}
     </main>
-    {detailOpen && detailRequest && <DetailPicker variant={samVariant} setVariant={setSAMVariant} sourceUrl={source?.url || ''} submitShortcut={detailShortcut} request={detailRequest} profile={profile} engine={engine} busy={jobBusy} close={() => setDetailOpen(false)} extract={(mode, target, guidance) => void extractDetail(detailRequest, mode, target, guidance)}/>}
+    {detailOpen && detailRequest && <DetailPicker variant={samVariant} setVariant={setSAMVariant} sourceUrl={source?.url || ''} submitShortcut={detailShortcut} request={detailRequest} profile={profile} engine={engine} busy={jobBusy} close={() => setDetailOpen(false)} extract={(mode, target, guidance, referenceAudio) => void extractDetail(detailRequest, mode, target, guidance, referenceAudio)}/>}
     {projectsOpen && <div className="modal-backdrop"><section className="connection-modal projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-title">
       <div className="modal-top"><span className="eyebrow"><FolderOpen size={14}/> PROJECTS</span><button className="icon-button" disabled={projectBusy} onClick={() => setProjectsOpen(false)} aria-label="Close projects"><X size={17}/></button></div>
       <h2 id="projects-title">Your workspace.</h2>
@@ -346,7 +385,7 @@ function App() {
       <div className="modal-actions"><span className="subtle">{projectBusy ? 'Preparing project…' : 'Autosave on · resume last project'}</span><button className="primary-button" disabled={projectBusy} onClick={() => { void flushProject().then(() => setProjectsOpen(false)).catch(cause => setError(String(cause))); }}><Save size={14}/> Save</button></div>
     </section></div>}
     {exportOpen && <div className="modal-backdrop"><section className="connection-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title"><div className="modal-top"><span className="eyebrow"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/> VIDEO EXPORT</span><button className="icon-button" disabled={videoExporting} onClick={() => setExportOpen(false)} aria-label="Close export"><X size={18}/></button></div><h2 id="export-title">Keep the picture.</h2><p className="modal-description">Saved by ComfyUI. Original video + lossless FLAC audio.</p><label>Audio<select value={exportMode} disabled={videoExporting} onChange={event => setExportMode(event.target.value as 'mix' | 'tracks')}><option value="mix">Current mix · mute, solo and levels</option><option value="tracks">Separate stem tracks · original levels</option></select></label><p className="helper">{exportMode === 'tracks' ? 'Embeds every stem as a separate selectable audio track. Mixer controls are ignored.' : 'Replaces the source audio with the current stem mix.'} MKV · native ComfyUI SaveVideo.</p>{videoExporting && <div role="status"><progress max="1" value={exportState.progress}/><p className="helper">{exportState.message}</p></div>}{error && <p className="error-banner" role="alert">{error}</p>}<div className="modal-actions">{videoExporting ? <button className="secondary-button" onClick={() => void window.desktop?.cancelExport().catch(cause => setError(String(cause)))}>Cancel export</button> : <button className="secondary-button" onClick={() => setExportOpen(false)}>Cancel</button>}<button className="primary-button" disabled={videoExporting || !playback.duration} onClick={() => void exportVideo()}>{videoExporting ? 'Exporting…' : 'Export video'}</button></div></section></div>}
-    <input ref={input} type="file" accept="video/*,.mkv" hidden onChange={event => { const file = event.target.files?.[0]; if (file) { setMediaError(false); setSource({ name: file.name, size: file.size, url: URL.createObjectURL(file) }); } }}/>
+    <input ref={input} type="file" accept="video/*,audio/*,.mkv,.flac,.opus" hidden onChange={event => { const file = event.target.files?.[0]; if (file) { setMediaError(false); setSource({ name: file.name, size: file.size, url: URL.createObjectURL(file) }); } }}/>
     {settings && <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget && !busy && !saving && !proxyWorking) setSettings(false); }}>
       <section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
         <div className="modal-top"><span className="eyebrow"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/> YOUR ENGINE, YOUR MACHINE</span><button className="icon-button" aria-label="Close connection settings" disabled={busy || saving || proxyWorking} onClick={() => setSettings(false)}><X size={18}/></button></div>

@@ -1,0 +1,41 @@
+import { useEffect, useState } from 'react';
+import { FileAudio, LoaderCircle, X } from 'lucide-react';
+import type { Profile, ReferenceAudio, SAMState } from './types';
+
+const preparingPhase = (state: SAMState | null) => !!state && !['idle', 'complete', 'failed', 'cancelled'].includes(state.phase);
+export const guidesepPreparing = preparingPhase;
+export function useGuideSepStatus(profile: Profile) {
+  const [state, setState] = useState<SAMState | null>(null);
+  useEffect(() => {
+    let active = true;
+    const poll = () => window.desktop?.guidesepStatus(profile).then(value => { if (active) setState(value); }).catch(() => {});
+    void poll(); const timer = setInterval(poll, 1000);
+    return () => { active = false; clearInterval(timer); };
+  }, [profile.installation, profile.comfyUrl]);
+  return [state, setState] as const;
+}
+export function GuideSepPanel({ profile, engine, state, setState, reference, setReference, busy }: { profile: Profile; engine: { guidesep?: boolean } | null; state: SAMState | null; setState: (value: SAMState) => void; reference: ReferenceAudio | null; setReference: (value: ReferenceAudio | null) => void; busy: boolean }) {
+  const [consent, setConsent] = useState(false), [error, setError] = useState('');
+  const preparing = preparingPhase(state);
+  async function choose() { try { setError(''); const picked = await window.desktop!.chooseReference(); if (picked) setReference(picked); } catch (cause) { setError(String(cause)); } }
+  async function prepare() { try { setError(''); setState(await window.desktop!.prepareGuideSep(profile)); } catch (cause) { setError(String(cause)); } }
+  return <div className="guidesep-panel">
+    <span className="field-label">Reference sound</span>
+    <div className="reference-row">
+      <button type="button" className="secondary-button reference-pick" disabled={busy || !window.desktop} onClick={() => void choose()} data-tip={'Choose a reference\nHum, whistle or play the part you want to pull out. Its start lines up with the start of the processed region.'}>
+        <FileAudio size={15}/><span>{reference ? reference.name : 'Choose audio file'}</span>
+      </button>
+      {reference && <button type="button" className="icon-button" aria-label="Clear reference" disabled={busy} onClick={() => setReference(null)}><X size={13}/></button>}
+    </div>
+    <p className="helper">GuideSep pulls the instrument that matches your reference. It works at 16 kHz mono, so the result is band-limited. Best on clips of a few seconds.</p>
+    {engine && !engine.guidesep && <p className="helper">Update the integration and restart idle ComfyUI to enable GuideSep.</p>}
+    {!state?.ready && <details className="sam-preparation" open><summary>Prepare GuideSep</summary>
+      <p>Downloads a private CUDA runtime and the public GuideSep v1 checkpoint (about 1 GB, MIT licensed). Your ComfyUI Python stays unchanged. No account or token is needed.</p>
+      <label className="sam-consent"><input type="checkbox" checked={consent} disabled={preparing} onChange={event => setConsent(event.target.checked)}/> I approve these downloads. <a href="https://huggingface.co/YutongCooper/GuideSep-v1" target="_blank" rel="noreferrer">Model page</a></label>
+      <button className="secondary-button" disabled={!consent || preparing || busy} onClick={() => void prepare()}>Prepare GuideSep</button>
+      {preparing && <button className="quiet-button" onClick={() => void window.desktop?.cancelGuideSep()}>Cancel preparation</button>}
+    </details>}
+    {state?.message && <div className="sam-progress" role="status">{preparing && <LoaderCircle className="spin" size={13}/>} {state.message}{state.detail && <details><summary>Details</summary><pre>{state.detail}</pre></details>}</div>}
+    {error && <p className="error-banner" role="alert">{error}</p>}
+  </div>;
+}

@@ -6,9 +6,10 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 
 ## Features
 
-- Separate dialogue, music and effects with **MERL MRX (default)**, BandIt v2 or SFC-Locoformer.
-- Waveform timeline with shared video/stem transport, mute/solo, zoom, range loop and non-destructive clip trim, split and gain edits.
-- Extract named sounds with USS/PANNs (AudioSet classes, or All with Auto thresholds) and, experimentally, SAM Audio with text, time examples and visual boxes.
+- Import a video or an audio file and separate dialogue, music and effects with **MERL MRX (default)**, BandIt v2 or SFC-Locoformer. Pick the model from the icon tiles; hover for its full name and license note.
+- Waveform timeline with shared video/stem transport, mute and solo (Ctrl+click to solo several), zoom, range loop, non-destructive clip trim, split and gain edits, and Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Model takes appear as tabs above the timeline: middle-drag or Ctrl+wheel to scroll them.
+- Extract named sounds with USS/PANNs (AudioSet classes, or All with Auto thresholds) and, experimentally, SAM Audio (text, time examples, visual boxes) on the whole source or on a selected channel range.
+- Experimental GuideSep separation: hum or play a reference and pull the matching instrument from music, on the whole source or on a channel range.
 - Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
 
 ## Requirements
@@ -35,13 +36,14 @@ SAM Audio is optional: it needs your own Hugging Face account, approval of the S
 | USS at_soft + PANNs Cnn14 | Named sound extraction | Apache 2.0 / CC BY 4.0 | Yes |
 | SFC-Locoformer Medium DnR | Optional separator | CC BY-NC-SA 4.0 | Non-commercial only |
 | SAM Audio (small/large tv) | Experimental extraction | SAM license, gated on Hugging Face | Gated access, review the license |
+| GuideSep v1 | Experimental reference-guided music separation | MIT (code and checkpoint card) | Yes, public download, no token |
 
 Pinned sources, sizes and hashes: `setup/models.json`. Vendored code revisions and notices: `comfy_nodes/StemStudio/NOTICE.md`. Third-party mirrors are pinned by revision and verified by hash.
 
 ## Status
 
-Separation with SFC was confirmed by a user on real media. Other adapters, the timeline, SAM Audio and exports are implemented but awaiting wider live acceptance. Quality, VRAM use and long-media behavior are not benchmarked. PromptSep is shown as unavailable because its public repository contains no runnable model.
+Separation with SFC was confirmed by a user on real media. Other adapters, the timeline, SAM Audio and exports are implemented but awaiting wider live acceptance. Quality, VRAM use and long-media behavior are not benchmarked. GuideSep replaces the earlier PromptSep placeholder: PromptSep's public repository contains no runnable model, while GuideSep (same authors) ships a public checkpoint. GuideSep works at 16 kHz mono, so its output is band-limited.
 
 ## Development
 
-Node 22+: `npm ci`, `npm run dev`, `npm run build`, `npm test`. `npm run dist:win` builds `release/Stem-Studio-Setup.exe` and `release/Stem-Studio-Core.exe` (needs the .NET Framework C# compiler). Architecture notes are in `docs/`; agent handoff state is in `docs/HANDOFF.md`.
+Node 22+: `npm ci`, then `npm run dev` for the fast loop: the renderer hot-reloads, Electron restarts when files in `electron/` change, and `comfy_nodes/StemStudio` is mirrored into your installed ComfyUI on every save (restart ComfyUI to load Python changes). Close the installed Stem Studio first, since the app allows one instance. Other scripts: `npm run build`, `npm test`. `npm run dist:win` builds `release/Stem-Studio-Setup.exe` and `release/Stem-Studio-Core.exe` (needs the .NET Framework C# compiler). Architecture notes are in `docs/`; agent handoff state is in `docs/HANDOFF.md`.

@@ -1,9 +1,10 @@
 """Read-only optional thermal sensors. No subprocesses or monitoring dependencies."""
 def temperatures():
-    result = {"gpu": None, "cpu": None}
+    result = {"gpu": None, "cpu": None, "cpuLoad": None}
     try:
         import psutil
-        readings = psutil.sensors_temperatures()
+        result["cpuLoad"] = psutil.cpu_percent(interval=None)
+        readings = psutil.sensors_temperatures() if hasattr(psutil, "sensors_temperatures") else {}
         for name in ("coretemp", "k10temp", "cpu_thermal"):
             values = [sensor.current for sensor in readings.get(name, []) if sensor.current is not None]
             if values:

@@ -7,6 +7,8 @@ import { Comfy } from '@comfyorg/sdk';
 import { checkConnection, normalizeEndpoint } from './connection.mjs';
 import { AudioRenderer } from './audio-render.mjs';
 import { SAMManager } from './sam-manager.mjs';
+import { GuideSepManager } from './guidesep-manager.mjs';
+import { audioFilters, isAudioPath, isSourcePath, sourceFilters } from './media-types.mjs';
 import { Projects } from './projects.mjs';
 import { resources } from './resources.mjs';
 import { VideoExporter } from './video-export.mjs';
@@ -20,7 +22,7 @@ const defaults = { comfyUrl: 'http://127.0.0.1:8188', proxyUrl: 'http://127.0.0.
 let window;
 let proxyManager;
 let separation;
-let samManager;
+let samManager, guidesepManager;
 let audioRenderer;
 const videoExporter = new VideoExporter();
 let engineInstallState = { phase: 'idle', message: '', detail: '', current: 0, total: 0 };
@@ -77,7 +79,7 @@ app.whenReady().then(async () => {
         return result.canceled ? null : projects.saveAs(result.filePaths[0]);
       }
       if (action === 'relink') {
-        const result = await dialog.showOpenDialog(window, { title: 'Relink original video (same timing and duration)', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv'] }] });
+        const result = await dialog.showOpenDialog(window, { title: 'Relink original media (same timing and duration)', properties: ['openFile'], filters: sourceFilters });
         return result.canceled ? null : projects.relink(result.filePaths[0]);
       }
       if (action === 'folder') { await shell.openPath(dirname(projects.path)); return null; }
@@ -93,6 +95,18 @@ app.whenReady().then(async () => {
   handle('sam:status', (profile, variant) => samManager.status(sanitize(profile), variant));
   handle('sam:prepare', (profile, token, variant) => { if (separation.active) throw Error('Wait for separation to finish first.'); return samManager.start(sanitize(profile), token, variant); });
   handle('sam:cancel', () => samManager.cancel());
+  guidesepManager = new GuideSepManager(join(app.getPath('userData'), 'guidesep'), app.isPackaged ? join(process.resourcesPath, 'setup', 'prepare-guidesep.py') : join(here, '../setup/prepare-guidesep.py'));
+  handle('guidesep:status', profile => guidesepManager.status(sanitize(profile)));
+  handle('guidesep:prepare', profile => { if (separation.active) throw Error('Wait for separation to finish first.'); if (samManager.active) throw Error('Wait for SAM preparation to finish first.'); return guidesepManager.start(sanitize(profile)); });
+  handle('guidesep:cancel', () => guidesepManager.cancel());
+  handle('reference:choose', async () => {
+    const selection = await dialog.showOpenDialog(window, { title: 'Choose a reference sound (hum, whistle or play the target)', properties: ['openFile'], filters: audioFilters });
+    if (selection.canceled) return null;
+    const path = selection.filePaths[0];
+    if (!isAudioPath(path)) throw new Error('Choose a supported audio file.');
+    const info = await stat(path);
+    return { name: path.split(/[\/]/).pop(), size: info.size, url: expose(path) };
+  });
   handle('resources:get', profile => resources(sanitize(profile)));
   handle('layout:zoom', factor => {
     if (!Number.isFinite(factor) || factor < 0.6 || factor > 1.5) throw new Error('Invalid layout scale.');
@@ -139,6 +153,12 @@ app.whenReady().then(async () => {
     try { const url = new URL(sourceUrl); if (url.protocol === 'app-media:' && url.hostname === 'source') source = sources.get(url.pathname.slice(1)); } catch { }
     if (!source) throw new Error('Choose a local source video first.');
     if (samManager.active && options?.mode === 'sam') throw Error('Wait for SAM preparation to finish.');
+    if (guidesepManager.active && options?.mode === 'guidesep') throw Error('Wait for GuideSep preparation to finish.');
+    let referencePath;
+    if (options?.mode === 'guidesep') {
+      try { const url = new URL(options.referenceUrl); if (url.protocol === 'app-media:' && url.hostname === 'source') referencePath = sources.get(url.pathname.slice(1)); } catch {}
+      if (!referencePath) throw Error('Choose a reference sound for GuideSep first.');
+    }
     if (options?.parentId && separation.output(options.parentId).path !== source) throw Error('The selected parent channel does not match its audio.');
     let samVideoPath;
     if (options?.mode === 'sam' && options.sam?.visual) {
@@ -146,7 +166,7 @@ app.whenReady().then(async () => {
       if (!samVideoPath) throw Error('Choose the original video for visual guidance.');
     }
     const nativeRoot = projects.current.storage?.comfyRoot;
-    return separation.start(sanitize(profile), source, { ...options, samVideoPath, nativeRoot, outputPrefix: nativeRoot ? `StemStudio/${projects.current.id}/${randomUUID()}` : undefined });
+    return separation.start(sanitize(profile), source, { ...options, samVideoPath, referencePath, nativeRoot, outputPrefix: nativeRoot ? `StemStudio/${projects.current.id}/${randomUUID()}` : undefined });
   });
   handle('stems:status', () => separation.snapshot());
   handle('stems:cancel', () => separation.cancel());
@@ -203,10 +223,10 @@ app.whenReady().then(async () => {
   });
   handle('video:open', async () => {
     if (separation.active || videoExporter.active || audioRenderer.active) throw new Error('Wait for separation/export to finish or cancel it before changing the source.');
-    const selection = await dialog.showOpenDialog(window, { title: 'Open a video', properties: ['openFile'], filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv'] }] });
+    const selection = await dialog.showOpenDialog(window, { title: 'Open a video or audio file', properties: ['openFile'], filters: sourceFilters });
     if (selection.canceled) return null;
     const path = selection.filePaths[0];
-    if (!['.mp4', '.mov', '.m4v', '.webm', '.mkv'].includes(extname(path).toLowerCase())) throw new Error('Choose a supported video file.');
+    if (!isSourcePath(path)) throw new Error('Choose a supported video or audio file.');
     const info = await stat(path);
     const token = randomUUID();
     sources.set(token, path);
@@ -221,7 +241,7 @@ app.whenReady().then(async () => {
   });
   window.webContents.on('render-process-gone', () => { rendererGone = true; });
   window.webContents.on('did-finish-load', () => { rendererGone = false; });
-  window.webContents.setWindowOpenHandler(({ url }) => { if (['https://huggingface.co/facebook/sam-audio-small-tv', 'https://huggingface.co/facebook/sam-audio-large-tv', 'https://huggingface.co/settings/tokens', 'https://github.com/YutongWen/PromptSep', 'https://huggingface.co/facebook/pe-av-large', 'https://github.com/facebookresearch/sam-audio/blob/main/LICENSE'].includes(url)) void shell.openExternal(url); return { action: 'deny' }; });
+  window.webContents.setWindowOpenHandler(({ url }) => { if (['https://huggingface.co/facebook/sam-audio-small-tv', 'https://huggingface.co/facebook/sam-audio-large-tv', 'https://huggingface.co/settings/tokens', 'https://huggingface.co/YutongCooper/GuideSep-v1', 'https://huggingface.co/facebook/pe-av-large', 'https://github.com/facebookresearch/sam-audio/blob/main/LICENSE'].includes(url)) void shell.openExternal(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', event => event.preventDefault());
   if (!app.isPackaged && process.argv.includes('--dev')) window.loadURL('http://127.0.0.1:5173');
   else window.loadFile(join(here, '../dist/index.html'));

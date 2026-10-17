@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { extname } from 'node:path';
+import { mimeTypes } from './media-types.mjs';
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS', 'Access-Control-Allow-Headers': 'Range', 'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges' };
 export function byteRange(value, size) {
   if (!value) return null;
@@ -19,8 +20,7 @@ export async function mediaResponse(request, path) {
   let info; try { info = await stat(path); } catch { return new Response(null, { status: 404, headers: cors }); }
   if (!info.isFile()) return new Response(null, { status: 404, headers: cors });
   const size = info.size;
-  const types = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.flac': 'audio/flac' };
-  const headers = { ...cors, 'Content-Type': types[extname(path).toLowerCase()] || 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
+  const headers = { ...cors, 'Content-Type': mimeTypes[extname(path).toLowerCase()] || 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store' };
   let range;
   try { range = byteRange(request.headers.get('Range'), size); }
   catch { return new Response(null, { status: 416, headers: { ...headers, 'Content-Range': `bytes */${size}`, 'Content-Length': '0' } }); }

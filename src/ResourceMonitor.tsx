@@ -20,13 +20,13 @@ export function ResourceMonitor({ profile }: { profile: Profile }) {
   }, [profile.comfyUrl]);
   const memory = (name: 'vram' | 'ram') => {
     const item = value?.[name];
-    return <div className="resource-cell" title={item ? `${name.toUpperCase()}: ${gb(item.used)} / ${gb(item.total)} GiB used on selected ComfyUI` : 'Selected ComfyUI memory unavailable'}><small>{name.toUpperCase()}</small><span>{item ? <>{gb(item.used)}<i> / {gb(item.total)} G</i></> : 'n/a'}</span><b style={{ width: `${item ? Math.min(100, item.used / item.total * 100) : 0}%` }}/></div>;
+    const label = name === 'vram' ? 'VRAM' : 'RAM';
+    return <div className={`tele-card ${item ? '' : 'off'}`} data-tip={item ? `${label}\n${gb(item.used)} of ${gb(item.total)} GiB in use on the selected ComfyUI.` : `${label}\nUnavailable. Check the ComfyUI connection.`}><small>{label}</small><strong>{item ? <>{gb(item.used)}<i> / {gb(item.total)} G</i></> : 'n/a'}</strong><b style={{ width: `${item ? Math.min(100, item.used / item.total * 100) : 0}%` }}/></div>;
   };
-  return <div className={`resource-monitor ${value?.online ? 'available' : ''}`} aria-label="Selected ComfyUI resources">
+  const gpu = value?.gpuTemperature, cpu = value?.cpuTemperature, load = value?.cpuLoad;
+  return <div className={`telemetry ${value?.online ? 'available' : ''}`} aria-label="Selected ComfyUI resources">
     {memory('vram')}{memory('ram')}
-    {(['gpu', 'cpu'] as const).map(kind => {
-      const temp = value?.[kind === 'gpu' ? 'gpuTemperature' : 'cpuTemperature'];
-      return <div key={kind} className={`resource-cell thermal ${temp != null && temp >= 85 ? 'hot' : ''}`} title={temp == null ? `${kind.toUpperCase()} sensor unavailable on selected ComfyUI. GPU requires NVML; CPU sensors depend on OS support.` : `${kind.toUpperCase()} temperature on selected ComfyUI`}><small>{kind.toUpperCase()} °C</small><span>{temp == null ? 'n/a' : Math.round(temp) + '°'}</span></div>;
-    })}
+    <div className={`tele-card ${gpu == null ? 'off' : ''} ${gpu != null && gpu >= 85 ? 'hot' : ''}`} data-tip={gpu == null ? 'GPU temperature\nUnavailable. Needs NVIDIA NVML on the selected ComfyUI.' : 'GPU temperature\nReported by NVIDIA NVML on the selected ComfyUI.'}><small>GPU °C</small><strong>{gpu == null ? 'n/a' : `${Math.round(gpu)}°`}</strong></div>
+    <div className={`tele-card ${load == null && cpu == null ? 'off' : ''} ${cpu != null && cpu >= 90 ? 'hot' : ''}`} data-tip={cpu == null ? 'CPU load\nShared processor load on the ComfyUI machine. Windows does not expose CPU temperature without a hardware monitor driver.' : 'CPU load and temperature\nOn the ComfyUI machine.'}><small>{cpu == null ? 'CPU %' : 'CPU %/°C'}</small><strong>{load == null ? (cpu == null ? 'n/a' : `${Math.round(cpu)}°`) : <>{Math.round(load)}<i>{cpu != null ? ` · ${Math.round(cpu)}°` : '%'}</i></>}</strong>{load != null && <b style={{ width: `${Math.min(100, load)}%` }}/>}</div>
   </div>;
 }

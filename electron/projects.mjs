@@ -3,6 +3,7 @@ import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:pat
 import { randomUUID } from 'node:crypto';
 import { channelEdit } from '../src/clip-edits.mjs';
 import { nativePath, nativeRelative } from './native-media.mjs';
+import { isSourcePath } from './media-types.mjs';
 
 const idle = () => ({ phase: 'idle', message: '', stems: [], canCancel: false });
 const nameOf = value => String(value || 'Untitled project').replace(/[\x00-\x1f]/g, '').trim().slice(0, 100) || 'Untitled project';
@@ -26,7 +27,7 @@ function validate(doc) {
       ids.add(stem.id);
     }
   }
-  if (doc.source && (typeof doc.source.path !== 'string' || typeof doc.source.name !== 'string' || !Number.isFinite(doc.source.size) || !isAbsolute(doc.source.path) || !/\.(mp4|mov|m4v|webm|mkv)$/i.test(doc.source.path))) throw Error('Invalid source video reference.');
+  if (doc.source && (typeof doc.source.path !== 'string' || typeof doc.source.name !== 'string' || !Number.isFinite(doc.source.size) || !isAbsolute(doc.source.path) || !isSourcePath(doc.source.path))) throw Error('Invalid source reference.');
   if (doc.storage && (typeof doc.storage.comfyRoot !== 'string' || !isAbsolute(doc.storage.comfyRoot))) throw Error('Invalid ComfyUI storage root.');
   doc.view = view(doc.view);
   return doc;

@@ -2,7 +2,7 @@
 // Probe only our audio classes, so unrelated installed nodes cannot delay setup.
 export async function audioNodes(endpoint, fetchImpl = fetch) {
   const required = ['LoadAudio', 'StemStudioSeparate', 'SaveAudio'];
-  const names = [...required, 'StemStudioExtract', 'StemStudioExtractAll', 'StemStudioAudioRange', 'StemStudioRestoreRange', 'StemStudioSAM', 'StemStudioEditAudio', 'LoadVideo'];
+  const names = [...required, 'StemStudioExtract', 'StemStudioExtractAll', 'StemStudioAudioRange', 'StemStudioRestoreRange', 'StemStudioSAM', 'StemStudioGuideSep', 'StemStudioEditAudio', 'LoadVideo'];
   const results = await Promise.all(names.map(async name => {
     const response = await fetchImpl(`${endpoint}/object_info/${name}`, { signal: AbortSignal.timeout(5000), redirect: 'error' });
     if (!response.ok) {

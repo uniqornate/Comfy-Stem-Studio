@@ -128,8 +128,8 @@ except ImportError:
 from .resources import register as register_resources
 register_resources()
 
-from .detail_nodes import StemStudioAudioRange, StemStudioRestoreRange, StemStudioSAM
-NODE_CLASS_MAPPINGS.update(StemStudioAudioRange=StemStudioAudioRange, StemStudioRestoreRange=StemStudioRestoreRange, StemStudioSAM=StemStudioSAM)
+from .detail_nodes import StemStudioAudioRange, StemStudioRestoreRange, StemStudioSAM, StemStudioGuideSep
+NODE_CLASS_MAPPINGS.update(StemStudioAudioRange=StemStudioAudioRange, StemStudioRestoreRange=StemStudioRestoreRange, StemStudioSAM=StemStudioSAM, StemStudioGuideSep=StemStudioGuideSep)
 
 from .audio_edits import StemStudioEditAudio
 NODE_CLASS_MAPPINGS["StemStudioEditAudio"] = StemStudioEditAudio

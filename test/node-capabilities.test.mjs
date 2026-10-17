@@ -8,9 +8,9 @@ test('audio readiness never requests the global inventory and tolerates absent o
     calls.push(url);
     assert.notEqual(new URL(url).pathname, '/object_info');
     const name = url.split('/').at(-1);
-    return ['StemStudioExtract', 'StemStudioExtractAll', 'StemStudioAudioRange', 'StemStudioRestoreRange', 'StemStudioSAM', 'StemStudioEditAudio', 'LoadVideo'].includes(name) ? new Response('{}', { status: 404 }) : new Response(JSON.stringify({ [name]: { input: {} } }));
+    return ['StemStudioExtract', 'StemStudioExtractAll', 'StemStudioAudioRange', 'StemStudioRestoreRange', 'StemStudioSAM', 'StemStudioGuideSep', 'StemStudioEditAudio', 'LoadVideo'].includes(name) ? new Response('{}', { status: 404 }) : new Response(JSON.stringify({ [name]: { input: {} } }));
   });
-  assert.equal(calls.length, 10);
+  assert.equal(calls.length, 11);
   assert.deepEqual(Object.keys(nodes).sort(), ['LoadAudio', 'SaveAudio', 'StemStudioSeparate']);
 });
 
