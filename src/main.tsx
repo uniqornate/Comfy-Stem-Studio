@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AudioLines, ArrowLeft, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
+import { AudioLines, ArrowLeft, Mic, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
 import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportState, Stem, SAMGuidance, ProjectInfo, ProjectSession, ProjectPayload, TimelineView, ReferenceAudio } from './types';
 import './styles.css';
 const comfyWordmark = new URL('./assets/comfy/comfy-wordmark.svg', import.meta.url).href;
@@ -12,7 +12,10 @@ import { preferences } from './workspace-preferences.mjs';
 import { ResourceMonitor } from './ResourceMonitor';
 import { MediaTransport } from './media-transport.mjs';
 import { TooltipLayer } from './Tooltip';
+import { PreviewFooter } from './PreviewFooter';
+import { useCoarsePlayback } from './usePlayback';
 import { ModelPicker } from './ModelPicker';
+import { ModelModal } from './ModelModal';
 import { MODELS, modelName } from './models.mjs';
 import { SAMPrepare, SAMVariantSwitch, useSAMStatus } from './SAMPrepare';
 import { SAMGuidanceEditor } from './SAMGuidanceEditor';
@@ -82,6 +85,7 @@ function App() {
   const [lastGuidance, setLastGuidance] = useState<SAMGuidance | undefined>(undefined);
   const [samVariant, setSAMVariant] = useState<'small-tv' | 'large-tv'>('small-tv');
   const [detailMode, setDetailMode] = useState<'uss' | 'sam'>('uss');
+  const [modelModal, setModelModal] = useState<'sam' | 'guidesep' | null>(null);
   const [sourceGuidance, setSourceGuidance] = useState<SAMGuidance>({});
   const [reference, setReference] = useState<ReferenceAudio | null>(null);
   const [sam, setSAM] = useSAMStatus(profile, samVariant);
@@ -110,11 +114,10 @@ function App() {
   const sourceIsAudio = !!source && AUDIO_SOURCE.test(source.name);
   const [transport] = useState(() => new MediaTransport());
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
-  const [playback, setPlayback] = useState(transport.snapshot());
-  useEffect(() => transport.subscribe(setPlayback), [transport]);
+  const playback = useCoarsePlayback(transport);
   useEffect(() => { transport.attachVideo(video); return () => transport.attachVideo(null); }, [transport, video]);
   const keyboardActions = useRef({ toggle: () => {}, extract: () => {} });
-  keyboardActions.current = { toggle: () => { void transport.toggle(); }, extract: () => { if (settings || exportOpen || projectsOpen) return; if (detailOpen) { detailShortcut.current(); return; } if (activeOperation === 'uss' && detailRequest) void extractDetail(detailRequest, detailMode, target, lastGuidance); else void separate(); } };
+  keyboardActions.current = { toggle: () => { void transport.toggle(); }, extract: () => { if (settings || exportOpen || projectsOpen) return; if (modelModal) { if (canSeparate && modelReady) { setModelModal(null); void separate(); } return; } if (detailOpen) { detailShortcut.current(); return; } if (activeOperation === 'uss' && detailRequest) void extractDetail(detailRequest, detailMode, target, lastGuidance); else void separate(); } };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if ((event.code === 'Space' && event.target instanceof HTMLTextAreaElement && event.target.classList.contains('sam-target-description')) || (event.target instanceof HTMLInputElement && event.target.classList.contains('project-name-input'))) return;
@@ -159,9 +162,13 @@ function App() {
   }, [project?.id, video, source?.url, transport]);
   session.current = project ? { projectId: project.id, runs, view: { selectedRun, model, activeOperation, target, detailMode, samVariant, lastGuidance, detailRequest, layoutZoom, workspaceShare, timelineExpanded, floatPosition, floatSize, exportMode, transport: pendingTransport.current || transport.snapshot(), timelines: timelines.current } } : null;
   const rememberTimeline = useCallback((value: TimelineView) => { if (selectedRun) timelines.current[selectedRun] = value; }, [selectedRun]);
+  const currentPayload = (): ProjectPayload | null => session.current ? { ...session.current, view: { ...session.current.view, transport: pendingTransport.current || transport.snapshot(), timelines: { ...timelines.current } } } : null;
+  const savedTransport = useRef<ProjectPayload['view']['transport'] | null>(null);
   async function flushProject() {
-    if (!window.desktop || !session.current) return;
-    const payload = { ...session.current, view: { ...session.current.view, transport: pendingTransport.current || transport.snapshot(), timelines: { ...timelines.current } } };
+    const payload = currentPayload();
+    if (!window.desktop || !payload) return;
+    // While playing, only the playhead moves; keep the last saved position so autosave stays a no-op.
+    if (transport.snapshot().playing && savedTransport.current) payload.view.transport = savedTransport.current; else savedTransport.current = payload.view.transport;
     setProjectStatus('Saving…');
     try { await window.desktop.saveProject(payload); setProjectStatus('Saved'); }
     catch (cause) { setProjectStatus('Save failed'); throw cause; }
@@ -173,8 +180,8 @@ function App() {
     const timer = setInterval(() => { if (!session.current || switching.current || saving) return; saving = true; void flushRef.current().catch(cause => setError(String(cause))).finally(() => { saving = false; }); }, 2000);
     const off = window.desktop.onProjectClose(() => {
       transport.pause();
-      if (!session.current) { void window.desktop!.closeProject(null).catch(cause => setError(String(cause))); return; }
-      const payload = { ...session.current, view: { ...session.current.view, transport: pendingTransport.current || transport.snapshot(), timelines: { ...timelines.current } } };
+      const payload = currentPayload();
+      if (!payload) { void window.desktop!.closeProject(null).catch(cause => setError(String(cause))); return; }
       void window.desktop!.closeProject(payload).catch(cause => { setProjectStatus('Save failed'); setError(String(cause)); });
     });
     return () => { clearInterval(timer); off(); };
@@ -184,7 +191,7 @@ function App() {
     switching.current = true; setProjectBusy(true); setError(''); transport.pause();
     try {
       await flushProject();
-      const value = await window.desktop.projectAction(action, session.current, argument);
+      const value = await window.desktop.projectAction(action, currentPayload()!, argument);
       if (value && 'runs' in value) { hydrateProject(value); setProjectsOpen(false); }
       else if (value?.info) { setProject(value.info); setProjectName(value.info.name); }
       setRecent(await window.desktop.recentProjects());
@@ -210,24 +217,27 @@ function App() {
       }
     })().catch(cause => { setError(cause instanceof Error ? cause.message : 'Saved connection could not be prepared.'); setSettings(true); });
   }, []);
+  const proxyIdle = !preparingProxy && !['checking', 'downloading', 'installing', 'starting'].includes(proxyState?.phase || '');
+  const jobIdle = ['idle', 'complete', 'failed', 'cancelled'].includes(job.phase);
+  // Poll quickly only while something is running; unchanged answers never re-render the app.
   useEffect(() => {
     if (!window.desktop) return;
     let active = true;
     const read = () => window.desktop!.proxyStatus().then(value => {
       if (!active) return;
-      setProxyState(value);
-      if (value.phase === 'error') setConnection(current => current ? { ...current, proxy: false, proxyDetail: value.message } : null);
+      setProxyState(previous => JSON.stringify(previous) === JSON.stringify(value) ? previous : value);
+      if (value.phase === 'error') setConnection(current => current && current.proxy ? { ...current, proxy: false, proxyDetail: value.message } : current);
     }).catch(() => {});
-    read(); const timer = setInterval(read, 1000);
+    read(); const timer = setInterval(read, proxyIdle ? 4000 : 1000);
     return () => { active = false; clearInterval(timer); };
-  }, []);
+  }, [proxyIdle]);
   useEffect(() => {
     if (!window.desktop) return;
     let active = true;
-    const read = () => window.desktop!.stemStatus().then(value => { if (active) setJob(value); }).catch(() => {});
-    const timer = setInterval(read, 1000);
+    const read = () => window.desktop!.stemStatus().then(value => { if (active) setJob(previous => JSON.stringify(previous) === JSON.stringify(value) ? previous : value); }).catch(() => {});
+    const timer = setInterval(read, jobIdle ? 3000 : 1000);
     return () => { active = false; clearInterval(timer); };
-  }, []);
+  }, [jobIdle]);
   useEffect(() => () => { if (source?.url.startsWith('blob:')) URL.revokeObjectURL(source.url); }, [source]);
   useEffect(() => {
     if (job.phase !== 'complete' || !job.runId) return;
@@ -347,16 +357,10 @@ function App() {
             <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={20}/></span><span className="source-description"><strong>{source ? source.name : 'Add video or audio'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB · Original source` : 'MP4, MOV, MKV, MP3, WAV, FLAC and more'}</small></span><Plus size={16}/></button>
             <div className={`operation-section ${activeOperation === 'stems' ? 'is-selected' : ''}`} onFocusCapture={() => setActiveOperation('stems')} onPointerDownCapture={() => setActiveOperation('stems')}>
             <div className="section-title"><span className="section-label">STEM SEPARATION</span><span className="subtle">{MODELS.length} MODELS</span></div>
-            <ModelPicker value={model} onChange={setModel} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, guidesep: engine ? !!engine.guidesep : undefined }}/>
+            <ModelPicker value={model} onChange={id => { setModel(id); const kind = MODELS.find(item => item.id === id)?.kind; setModelModal(kind === 'prompt' ? 'sam' : kind === 'reference' ? 'guidesep' : null); }} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, guidesep: engine ? !!engine.guidesep : undefined }}/>
             <p className="model-caption">{modelName(model)}</p>
-            {modelKind === 'prompt' && <div className="model-options">
-              <SAMVariantSwitch variant={samVariant} setVariant={setSAMVariant} disabled={jobBusy} largeAvailable={!!engine?.samModels} reset={() => setSAM(null)}/>
-              {playback.duration > 0 ? <SAMGuidanceEditor key={`${source?.url}:${playback.duration}`} range={wholeRange} sourceUrl={source?.url || ''} value={sourceGuidance} change={setSourceGuidance} supported={!!engine?.samPrompts} visualSupported={!!engine?.samVisual && !sourceIsAudio}/> : <p className="helper">Open a source to describe the sound you want.</p>}
-              <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={samVariant} busy={jobBusy}/>
-              {source && playback.duration > 0 && sourceGuidanceError && samReady && <p className="helper">{sourceGuidanceError}</p>}
-            </div>}
-            {modelKind === 'reference' && <div className="model-options"><GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} busy={jobBusy}/></div>}
-            <button className="primary-button" disabled={!canSeparate || !modelReady} onClick={separate} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
+            {modelKind !== 'stems' && <button className="model-summary" disabled={jobBusy} onClick={() => setModelModal(modelKind === 'prompt' ? 'sam' : 'guidesep')} data-tip="Open options"><span>{modelKind === 'prompt' ? `${samVariant === 'small-tv' ? 'Small' : 'Large'} · ${sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description?.trim() || 'Describe the sound'}` : reference?.name || 'Choose a reference sound'}</span><SlidersHorizontal size={13}/></button>}
+            <button className="primary-button" disabled={modelKind !== 'stems' && !modelReady ? jobBusy : !canSeparate} onClick={() => { if (modelKind !== 'stems' && !modelReady) setModelModal(modelKind === 'prompt' ? 'sam' : 'guidesep'); else void separate(); }} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : modelKind !== 'stems' && !modelReady ? `Set up ${modelKind === 'prompt' ? 'SAM' : 'GuideSep'}` : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
             {(jobBusy || job.phase === 'failed' || job.phase === 'cancelled') && <p className="helper" role="status">{job.message}</p>}
             {job.canCancel && <button className="quiet-button" onClick={() => window.desktop?.cancelSeparation().then(setJob).catch(cause => setError(String(cause)))}>Cancel separation</button>}
             </div>
@@ -366,7 +370,7 @@ function App() {
         <section className={`panel preview-panel ${timelineExpanded && source ? 'floating-preview' : ''}`} style={timelineExpanded ? { left: floatPosition.x, top: floatPosition.y, width: floatSize.width, height: floatSize.height, maxWidth: "none", aspectRatio: "auto" } : undefined} onClick={() => { if (timelineExpanded && !floatMoved.current) void transport.toggle(); floatMoved.current = false; }}
           onPointerDown={event => { if (!timelineExpanded || !source || event.button !== 0) return; floatMoved.current = false; floatDrag.current = { x: event.clientX, y: event.clientY, left: floatPosition.x, top: floatPosition.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); }}
           onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - event.currentTarget.offsetWidth, drag.left + dx)), y: Math.max(0, Math.min(window.innerHeight - event.currentTarget.offsetHeight, drag.top + dy)) }); }}
-          onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloat} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><div className="preview-footer"><button className="icon-button" disabled={!playback.duration} onClick={() => void transport.toggle()} aria-label={playback.playing ? 'Pause video' : 'Play video'} title="Space">{playback.playing ? <Pause size={16}/> : <Play size={16}/>}</button><input type="range" min="0" max={playback.duration || 1} step="0.01" value={playback.position} onChange={event => transport.seek(Number(event.target.value))} aria-label="Video playhead"/><output>{playback.position.toFixed(1)} / {playback.duration.toFixed(1)}</output></div></section>
+          onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloat} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
       </div>
       <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={id => { setSelectedRun(id); setDetailRequest(null); setDetailOpen(false); }} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
@@ -374,6 +378,14 @@ function App() {
       {error && !settings && <p className="error-banner" role="alert">{error}</p>}
     </main>
     {detailOpen && detailRequest && <DetailPicker variant={samVariant} setVariant={setSAMVariant} sourceUrl={source?.url || ''} submitShortcut={detailShortcut} request={detailRequest} profile={profile} engine={engine} busy={jobBusy} close={() => setDetailOpen(false)} extract={(mode, target, guidance, referenceAudio) => void extractDetail(detailRequest, mode, target, guidance, referenceAudio)}/>}
+    {modelModal === 'sam' && <ModelModal icon={<Sparkles size={15}/>} title="SAM Audio" close={() => setModelModal(null)} note={!source ? 'Open a source first' : sourceGuidanceError || (samReady ? 'Pulls the sound from the whole source' : 'Prepare SAM Audio first')} runLabel="Extract sound" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
+      <SAMVariantSwitch variant={samVariant} setVariant={setSAMVariant} disabled={jobBusy} largeAvailable={!!engine?.samModels} reset={() => setSAM(null)}/>
+      {playback.duration > 0 ? <SAMGuidanceEditor key={`${source?.url}:${playback.duration}`} range={wholeRange} sourceUrl={source?.url || ''} value={sourceGuidance} change={setSourceGuidance} supported={!!engine?.samPrompts} visualSupported={!!engine?.samVisual && !sourceIsAudio}/> : <p className="helper">Open a source to describe the sound you want.</p>}
+      <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={samVariant} busy={jobBusy}/>
+    </ModelModal>}
+    {modelModal === 'guidesep' && <ModelModal icon={<Mic size={15}/>} title="GuideSep" close={() => setModelModal(null)} note={!source ? 'Open a source first' : !reference ? 'Choose a reference sound' : guideReady ? 'Pulls the matching instrument' : 'Prepare GuideSep first'} runLabel="Separate" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
+      <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} busy={jobBusy}/>
+    </ModelModal>}
     {projectsOpen && <div className="modal-backdrop"><section className="connection-modal projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-title">
       <div className="modal-top"><span className="eyebrow"><FolderOpen size={14}/> PROJECTS</span><button className="icon-button" disabled={projectBusy} onClick={() => setProjectsOpen(false)} aria-label="Close projects"><X size={17}/></button></div>
       <h2 id="projects-title">Your workspace.</h2>
@@ -387,35 +399,31 @@ function App() {
     {exportOpen && <div className="modal-backdrop"><section className="connection-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title"><div className="modal-top"><span className="eyebrow"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/> VIDEO EXPORT</span><button className="icon-button" disabled={videoExporting} onClick={() => setExportOpen(false)} aria-label="Close export"><X size={18}/></button></div><h2 id="export-title">Keep the picture.</h2><p className="modal-description">Saved by ComfyUI. Original video + lossless FLAC audio.</p><label>Audio<select value={exportMode} disabled={videoExporting} onChange={event => setExportMode(event.target.value as 'mix' | 'tracks')}><option value="mix">Current mix · mute, solo and levels</option><option value="tracks">Separate stem tracks · original levels</option></select></label><p className="helper">{exportMode === 'tracks' ? 'Embeds every stem as a separate selectable audio track. Mixer controls are ignored.' : 'Replaces the source audio with the current stem mix.'} MKV · native ComfyUI SaveVideo.</p>{videoExporting && <div role="status"><progress max="1" value={exportState.progress}/><p className="helper">{exportState.message}</p></div>}{error && <p className="error-banner" role="alert">{error}</p>}<div className="modal-actions">{videoExporting ? <button className="secondary-button" onClick={() => void window.desktop?.cancelExport().catch(cause => setError(String(cause)))}>Cancel export</button> : <button className="secondary-button" onClick={() => setExportOpen(false)}>Cancel</button>}<button className="primary-button" disabled={videoExporting || !playback.duration} onClick={() => void exportVideo()}>{videoExporting ? 'Exporting…' : 'Export video'}</button></div></section></div>}
     <input ref={input} type="file" accept="video/*,audio/*,.mkv,.flac,.opus" hidden onChange={event => { const file = event.target.files?.[0]; if (file) { setMediaError(false); setSource({ name: file.name, size: file.size, url: URL.createObjectURL(file) }); } }}/>
     {settings && <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget && !busy && !saving && !proxyWorking) setSettings(false); }}>
-      <section className="connection-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
-        <div className="modal-top"><span className="eyebrow"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/> YOUR ENGINE, YOUR MACHINE</span><button className="icon-button" aria-label="Close connection settings" disabled={busy || saving || proxyWorking} onClick={() => setSettings(false)}><X size={18}/></button></div>
-        <h2 id="connection-title">Connect your ComfyUI.</h2>
-        <p className="modal-description">Save your connection now, even if ComfyUI is closed. Check it when your services are running.</p>
-        <label>ComfyUI address<input value={profile.comfyUrl} disabled={busy || saving || proxyWorking} spellCheck={false} onChange={e => {setProfile({ ...profile, comfyUrl: e.target.value }); setConnection(null); setError('');}}/></label>
-        <label>API Proxy address<input value={profile.proxyUrl} disabled={busy || saving || proxyWorking} spellCheck={false} onChange={e => {setProfile({ ...profile, proxyUrl: e.target.value }); setConnection(null); setError('');}}/></label>
-        <div className="installation-row"><div><span className="field-label">Installation folder <span className="subtle">optional</span></span><p title={profile.installation}>{profile.installation || 'Choose your existing ComfyUI installation'}</p></div><button className="secondary-button" onClick={browse} disabled={!window.desktop || busy || saving}><FolderOpen size={15}/> Browse</button></div>
-        <div className="connection-results" role="status" aria-live="polite" aria-busy={busy}>
-          <div><span className={`status-dot ${connection ? connection.comfy ? 'green' : 'unavailable' : ''}`}/> ComfyUI <span>{busy ? 'Checking…' : connection ? connection.comfy ? 'Reachable' : 'Unavailable or incompatible' : 'Not checked'}</span></div>
-          <div><span className={`status-dot ${connection ? connection.proxy ? 'green' : 'unavailable' : ''}`}/> Official API Proxy <span>{busy ? 'Checking…' : connection ? connection.proxy ? 'Reachable' : 'Unavailable or incompatible' : 'Not checked'}</span></div>
-          {connection && <section className="service-details"><p><strong>ComfyUI:</strong> {connection.comfyDetail}</p><p><strong>Proxy:</strong> {connection.proxyDetail}</p></section>}
-          {connection && <p>{connection.message}{connection.device && <><br/>{connection.device}</>}</p>}
-          {error && <p className="error-text" role="alert">{error}</p>}
+      <section className="connection-modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
+        <header><span className="mini-title"><img className="comfy-modal-icon" src={comfyIcon} alt="Comfy"/><strong id="connection-title">Connection</strong></span><button className="icon-button" aria-label="Close connection settings" disabled={busy || saving || proxyWorking} onClick={() => setSettings(false)}><X size={15}/></button></header>
+        <div className="settings-grid">
+          <label>ComfyUI<input value={profile.comfyUrl} disabled={busy || saving || proxyWorking} spellCheck={false} onChange={e => { setProfile({ ...profile, comfyUrl: e.target.value }); setConnection(null); setError(''); }}/></label>
+          <label>API Proxy<input value={profile.proxyUrl} disabled={busy || saving || proxyWorking} spellCheck={false} onChange={e => { setProfile({ ...profile, proxyUrl: e.target.value }); setConnection(null); setError(''); }}/></label>
         </div>
-        <section className="proxy-setup" aria-label="Automatic proxy setup">
-          <div className="heading-inline"><ShieldCheck size={17}/><strong>Your local API Proxy</strong><span className="badge">AUTOMATIC</span></div>
-          <p>Prepare and start the official proxy here. First use downloads a private Python runtime and proxy packages. No terminal or system Python installation is needed.</p>
-          {proxyState && <p className="proxy-status" role="status" aria-live="polite">{proxyWorking && <LoaderCircle size={14} className="spin"/>}{proxyState.message}</p>}
-          <div className="proxy-buttons"><button className="secondary-button" onClick={prepareProxy} disabled={!window.desktop || busy || saving || proxyWorking || (proxyState?.phase === 'running' && proxyState.owned)}>{proxyWorking ? <LoaderCircle size={15} className="spin"/> : <Link2 size={15}/>} {proxyWorking ? 'Preparing proxy' : 'Set up & start proxy'}</button>{(proxyState?.owned || proxyWorking) && <button className="quiet-button" onClick={stopProxy}>{proxyWorking ? 'Cancel preparation' : 'Stop managed proxy'}</button>}</div>
-          {(proxyState?.owned || profile.managedProxy) && <label className="proxy-auto"><input type="checkbox" checked={profile.managedProxy} disabled={busy || saving || proxyWorking} onChange={event => setProfile(p => ({ ...p, managedProxy: event.target.checked }))}/> Start this proxy when Stem Studio opens</label>}
-          <p className="helper">Save connection to keep the startup preference. The managed proxy stops when Stem Studio closes. ComfyUI stays under your control.</p>
-          {proxyState?.detail && <details className="proxy-guide"><summary>Preparation details</summary><pre>{proxyState.detail}</pre></details>}
-        </section>
-        <div className="modal-actions connection-actions">
-          <button className="secondary-button" onClick={verify} disabled={busy || saving || proxyWorking}>{busy ? <LoaderCircle size={16} className="spin"/> : <Link2 size={16}/>} {busy ? 'Checking connection' : 'Check connection'}</button>
-          <button className="primary-button" onClick={saveConnection} disabled={busy || saving || proxyWorking}>{saving ? <LoaderCircle size={16} className="spin"/> : <Save size={16}/>} {saving ? 'Saving settings' : 'Save connection'}</button>
+        <div className="settings-folder"><span className="field-label">Folder</span><p title={profile.installation}>{profile.installation || 'No ComfyUI folder selected'}</p><button className="secondary-button" onClick={browse} disabled={!window.desktop || busy || saving}><FolderOpen size={13}/> Browse</button></div>
+        <div className="settings-status" role="status" aria-live="polite" aria-busy={busy}>
+          <span data-tip={connection?.comfyDetail || 'Not checked yet'}><i className={`status-dot ${connection ? connection.comfy ? 'green' : 'unavailable' : ''}`}/>ComfyUI <em>{busy ? 'Checking…' : connection ? connection.comfy ? 'Reachable' : 'Unavailable' : 'Not checked'}</em></span>
+          <span data-tip={connection?.proxyDetail || 'Not checked yet'}><i className={`status-dot ${connection ? connection.proxy ? 'green' : 'unavailable' : ''}`}/>Proxy <em>{busy ? 'Checking…' : connection ? connection.proxy ? 'Reachable' : 'Unavailable' : 'Not checked'}</em></span>
         </div>
-        <button className="quiet-button explore-button" onClick={() => setSettings(false)} disabled={busy || saving || proxyWorking}><ArrowLeft size={14}/> Continue without saving</button>
-        <p className="modal-footnote">Save keeps your addresses, folder and proxy startup preference. ComfyUI must already be running for a successful engine check.</p>
+        {(error || (connection && !(connection.comfy && connection.proxy))) && <p className="settings-note error-text" role="alert">{error || connection?.message}</p>}
+        <div className="settings-proxy">
+          <div className="settings-proxy-row">
+            <button className="secondary-button" onClick={prepareProxy} disabled={!window.desktop || busy || saving || proxyWorking || (proxyState?.phase === 'running' && proxyState.owned)} data-tip="Prepare and start the official proxy. First use downloads a private Python runtime.">{proxyWorking ? <LoaderCircle size={13} className="spin"/> : <Link2 size={13}/>} {proxyWorking ? 'Preparing' : 'Set up & start proxy'}</button>
+            {(proxyState?.owned || proxyWorking) && <button className="quiet-button" onClick={stopProxy}>{proxyWorking ? 'Cancel' : 'Stop'}</button>}
+            {(proxyState?.owned || profile.managedProxy) && <label className="proxy-auto"><input type="checkbox" checked={profile.managedProxy} disabled={busy || saving || proxyWorking} onChange={event => setProfile(p => ({ ...p, managedProxy: event.target.checked }))}/> Start with app</label>}
+          </div>
+          {proxyState?.message && <p className="settings-note" role="status">{proxyWorking && <LoaderCircle size={11} className="spin"/>} {proxyState.message}</p>}
+          {proxyState?.detail && <details className="proxy-guide"><summary>Details</summary><pre>{proxyState.detail}</pre></details>}
+        </div>
+        <footer>
+          <button className="quiet-button" onClick={() => setSettings(false)} disabled={busy || saving || proxyWorking}><ArrowLeft size={12}/> Continue without saving</button>
+          <span><button className="secondary-button" onClick={verify} disabled={busy || saving || proxyWorking}>{busy ? <LoaderCircle size={13} className="spin"/> : <Link2 size={13}/>} Check</button><button className="primary-button" onClick={saveConnection} disabled={busy || saving || proxyWorking}>{saving ? <LoaderCircle size={13} className="spin"/> : <Save size={13}/>} Save</button></span>
+        </footer>
       </section>
     </div>}
   </div>;

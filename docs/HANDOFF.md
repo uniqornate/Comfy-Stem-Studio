@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-31 | WAITING_USER | Claude | One-row model tiles, compact SAM/GuideSep modal, compact Connection settings, playback/polling performance pass (source only). | User checks the new modals and playback smoothness in `npm run dev`. |
 | W-20261017-30 | WAITING_USER | Claude | Undo/redo, solo-as-mute (Ctrl multi-solo), model tiles with SAM/GuideSep on whole source, audio import, themed tooltips, telemetry cards, take tabs in timeline toolbar, SAM draw-box fix, GuideSep adapter, `npm run dev` loop (0.12.0 source, not packaged). | User runs `npm run dev` with the installed app closed and checks the new UI; prepares GuideSep (about 1 GB) and tries a short reference separation. |
 | W-20261017-29 | WAITING_USER | Codex, Claude (resumed) | Non-destructive timeline clips/gain, whole-channel detail actions, floating resize, waveform performance and model options packaged in 0.11.0. | User upgrades and checks right-click whole-channel actions, Ctrl+B split, floating resize, project persistence and export. PromptSep availability investigation not completed. |
 | W-20261017-28 | WAITING_USER | Codex | Native Comfy input/output project references, autosave and last-session restore packaged in 0.10.0. | User upgrades, verifies source/stems paths, project restart, mix/loop and short USS All. |
@@ -50,6 +51,15 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-31: Compact modals and performance pass
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-17T05:30:00+03:00 | Work: W-20261017-31
+  Change: Five model tiles on one row; SAM and GuideSep options open in a compact modal (src/ModelModal.tsx) with a summary row and Set up/Run button in the left panel; Connection settings rebuilt as a compact dialog; dialog scrollbars hidden. Performance: playback no longer re-renders the whole app at 60 Hz (src/usePlayback.ts: coarse playback state plus leaf components for position; timeline playhead moves through the --playhead CSS variable), status polling is adaptive and skips unchanged answers (job, proxy, SAM, GuideSep), autosave keeps the last saved transport while playing so it stays a no-op, project payload is built on demand instead of per render.
+  Validation: TypeScript, Vite build and 120 JS tests pass. No app launch, so smoothness and layout are static-analysis only.
+  Artifacts: src/{ModelModal,PreviewFooter,usePlayback}, src/main.tsx, src/StemTimeline.tsx, src/{SAMPrepare,GuideSepPanel}.tsx, src/styles.css.
+  Next: User verifies modals, connection dialog and playback feel; unused-feature list was reported in chat for decisions.
 
 ### W-20261017-30: Workspace overhaul, GuideSep and dev loop (0.12.0 source)
 
