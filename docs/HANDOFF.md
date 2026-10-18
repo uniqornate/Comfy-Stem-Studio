@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-37 | WAITING_USER | Claude | Space no longer toggles playback while typing or with a dialog open; range selection (brush and Shift) scrubs the preview video (0.12.5 source). | User checks typing a space in the brush prompt and the preview while dragging a range. |
 | W-20261017-36 | WAITING_USER | Claude | Brush tool phase 1: prompt-painted sound effects into a new channel with Stable Audio 3 Small-SFX via native ComfyUI nodes (0.12.4 source, not packaged). | User tries the brush in `npm run dev` with ComfyUI running, downloads the sound model from the brush dialog and reports quality and any ComfyUI node mismatch. |
 | W-20261017-35 | WAITING_USER | Claude | A/B compare removed; closable take tabs; SAM box only between its marks (UI and node); SAM sound-example span bar; ComfyUI auto-install in setup; model location rule documented; brush-tool model research (0.12.3 source, not packaged). | User checks each item in `npm run dev`; setup changes need an installer build and a real run. |
 | W-20261017-34 | WAITING_USER | Claude | Feedback round: range-gain waveform feedback, video scrub coalescing, proportional floating preview, single-row telemetry, SAM visual tolerance, GuideSep on another audio file (0.12.2 source). | User checks each item in `npm run dev`. |
@@ -56,6 +57,16 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-37: Key conflicts and range scrubbing
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-19T00:20:00+03:00 | Work: W-20261017-37
+  Change: src/keys.mjs decides who owns a keystroke. Space reaches playback only when the focus is not a text field, select or editable region and no `.modal-backdrop` dialog is open (the old special cases for two named fields are gone, so the brush prompt and every other field now accept spaces). The ? help key opens only outside typing and outside other dialogs. Ctrl+Enter is ignored behind dialogs other than the model and channel dialogs and is left to the brush prompt inside the brush dialog (previously it could start a stem separation). Dragging a range, in brush mode or with Shift, now scrubs the preview video (and the playhead) to the pointer, including at press, so frames show while choosing.
+  Validation: TypeScript, Vite build and 159 JS tests pass; src/keys.mjs is covered by tests. Not run in the app.
+  Limits: Space on a focused button still follows the page handler when no dialog is open, as before. Scrubbing during range selection moves the playhead to the pointer.
+  Artifacts: src/keys.mjs, src/main.tsx, src/StemTimeline.tsx, test/keys.test.mjs.
+  Next: User verifies.
 
 ### W-20261017-36: Brush tool, phase 1
 

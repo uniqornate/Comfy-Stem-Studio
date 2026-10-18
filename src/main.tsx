@@ -26,6 +26,7 @@ import { BatchModal } from './BatchModal';
 import { BrushModal } from './BrushModal';
 import { normalizeMarkers } from './markers.mjs';
 import { clampFloat, resizeFloat } from './float-geometry.mjs';
+import { helpKeyApplies, playbackKeyApplies } from './keys.mjs';
 import { analyzeSource, suggestModel } from './source-profile.mjs';
 import type { BatchOptions, MixExportOptions } from './types';
 const STEM_MODELS = ['mrx', 'bandit', 'sfc'];
@@ -134,11 +135,13 @@ function App() {
   const playback = useCoarsePlayback(transport);
   useEffect(() => { transport.attachVideo(video); return () => transport.attachVideo(null); }, [transport, video]);
   const keyboardActions = useRef({ toggle: () => {}, extract: () => {} });
-  keyboardActions.current = { toggle: () => { void transport.toggle(); }, extract: () => { if (settings || exportOpen || projectsOpen) return; if (modelModal) { if (canSeparate && modelReady) { setModelModal(null); void separate(); } return; } if (detailOpen) { detailShortcut.current(); return; } if (activeOperation === 'uss' && detailRequest) void extractDetail(detailRequest, detailMode, target, lastGuidance); else void separate(); } };
+  keyboardActions.current = { toggle: () => { void transport.toggle(); }, extract: () => { if (settings || exportOpen || projectsOpen || (document.querySelector('.modal-backdrop') && !modelModal && !detailOpen)) return; if (modelModal) { if (canSeparate && modelReady) { setModelModal(null); void separate(); } return; } if (detailOpen) { detailShortcut.current(); return; } if (activeOperation === 'uss' && detailRequest) void extractDetail(detailRequest, detailMode, target, lastGuidance); else void separate(); } };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if ((event.code === 'Space' && event.target instanceof HTMLTextAreaElement && event.target.classList.contains('sam-target-description')) || (event.target instanceof HTMLInputElement && event.target.classList.contains('project-name-input'))) return;
-      if (event.key === '?' && !event.ctrlKey && !event.altKey && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); setShortcutsOpen(open => !open); return; }
+      const modalOpen = !!document.querySelector('.modal-backdrop');
+      if (event.code === 'Space' && !playbackKeyApplies({ target: event.target, modalOpen })) return;
+      if (event.key === '?' && !event.ctrlKey && !event.altKey && helpKeyApplies({ target: event.target, modalOpen, helpOpen: !!document.querySelector('.shortcuts-modal') })) { event.preventDefault(); setShortcutsOpen(open => !open); return; }
+      if (event.ctrlKey && event.key === 'Enter' && event.target instanceof Element && event.target.closest('.brush-modal')) return;
       const action = event.code === 'Space' ? 'toggle' : event.ctrlKey && event.key === 'Enter' ? 'extract' : null;
       if (!action) return;
       event.preventDefault(); event.stopImmediatePropagation();

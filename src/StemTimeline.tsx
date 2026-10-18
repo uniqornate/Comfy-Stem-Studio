@@ -194,11 +194,13 @@ export function StemTimeline({ brushAvailable, onBrush, closeTake, markers, setM
     event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
     const at = point(event); const selecting = event.shiftKey || brushRef.current.brushMode;
     gesture.current = { kind: selecting ? 'select' : 'seek', anchor: at };
-    if (selecting) transport.setSelection(at, at); else seek(at);
+    if (selecting) { transport.setSelection(at, at); transport.scrub(at); } else seek(at);
   }
   function dragSeek(event: React.PointerEvent<HTMLElement>) {
     if (!gesture.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    if (gesture.current.kind === 'select') transport.setSelection(gesture.current.anchor, point(event)); else transport.scrub(point(event));
+    const at = point(event);
+    // Picking a range scrubs the video too, so the frames under the pointer are the visual reference.
+    if (gesture.current.kind === 'select') transport.setSelection(gesture.current.anchor, at); transport.scrub(at);
   }
   function endSeek(event: React.PointerEvent<HTMLElement>) {
     if (!gesture.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
