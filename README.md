@@ -10,6 +10,7 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 - Waveform timeline with shared video/stem transport, mute and solo (Ctrl+click to solo several), zoom, range loop, non-destructive clip trim, split and gain edits, and Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Model takes appear as tabs above the timeline: middle-drag or Ctrl+wheel to scroll them.
 - Extract named sounds with USS/PANNs (AudioSet classes, or All with Auto thresholds) and, experimentally, SAM Audio (text, time examples, visual boxes) on the whole source or on a selected channel range.
 - Experimental GuideSep separation: hum or play a reference and pull the matching instrument from music, on the whole source or on a channel range. Set where the reference starts, or use any extracted channel as the reference.
+- Brush: drag over a region of the timeline, describe a sound, and Stable Audio 3 Small-SFX paints it into a new channel at that time, using ComfyUI's own nodes (the 3.4 GB model is downloaded on first use into `models/audio_separation/stable-audio-3`).
 - Markers (M) with section loops (double-click the ruler), export of the current mix to WAV or FLAC, batch processing of many files into one folder, a quick source check that suggests a starting model, and a `?` shortcut list.
 - Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
 
@@ -42,6 +43,7 @@ SAM Audio is optional: it needs your own Hugging Face account, approval of the S
 | SFC-Locoformer Medium DnR | Optional separator | CC BY-NC-SA 4.0 | Non-commercial only |
 | SAM Audio (small/large tv) | Experimental extraction | SAM license, gated on Hugging Face | Gated access, review the license |
 | GuideSep v1 | Experimental reference-guided music separation | MIT (code and checkpoint card) | Yes, public download, no token |
+| Stable Audio 3 Small-SFX + T5Gemma | Brush: sound effects from a prompt | Stability AI Community License | Open weights, public download, no token; commercial use is limited by a revenue threshold |
 
 Pinned sources, sizes and hashes: `setup/models.json`. Vendored code revisions and notices: `comfy_nodes/StemStudio/NOTICE.md`. Third-party mirrors are pinned by revision and verified by hash.
 

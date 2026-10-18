@@ -9,6 +9,7 @@ Stem Studio is a desktop front end. Everything it does to your audio runs as ord
 | `Stem-Studio_03_Describe-A-Sound-SAM-Audio` | Describe a sound in English and pull it out (experimental) | SAM Audio (gated on Hugging Face) |
 | `Stem-Studio_04_Guide-By-Reference-GuideSep` | Pull an instrument by humming or playing a reference (experimental) | GuideSep v1 (MIT) |
 | `Stem-Studio_05_Stems-Then-Footsteps` | Stems first, then footsteps from the effects stem | MRX + USS |
+| `Stem-Studio_06_Paint-A-Sound-Stable-Audio-3` | The brush: a prompt becomes a sound placed at a time on the source's timeline | Stable Audio 3 Small-SFX (Stability AI Community License) |
 
 Open a `.json` from this folder with **Workflow > Open** (graph format). The `api/` folder holds the same graphs in API format, exactly what the app submits, for scripts and the Comfy SDK.
 

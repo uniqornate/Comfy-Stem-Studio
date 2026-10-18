@@ -12,7 +12,7 @@ const sources = async () => (await Promise.all(python.map(name => readFile(join(
 
 test('graph workflows are self-consistent', async () => {
   const files = await load('workflows');
-  assert.ok(files.length >= 5);
+  assert.ok(files.length >= 6);
   for (const [name, flow] of files) {
     const nodes = new Map(flow.nodes.map(node => [node.id, node]));
     assert.equal(nodes.size, flow.nodes.length, `${name}: unique node ids`);
@@ -60,6 +60,7 @@ test('API workflows are exactly what the app submits and reference real nodes', 
     ['Stem-Studio_02', stemWorkflow({ mode: 'uss', target: 'Walk, footsteps', threshold: 0.1, autoThreshold: true })],
     ['Stem-Studio_03', stemWorkflow({ mode: 'sam', target: 'footsteps', samModel: 'small-tv' })],
     ['Stem-Studio_04', stemWorkflow({ mode: 'guidesep', target: 'reference' })],
+    ['Stem-Studio_06', stemWorkflow({ mode: 'brush', target: 'footsteps', brush: { prompt: 'slow footsteps on wet gravel, close up', seconds: 3, start: 2, seed: 12345 } })],
   ];
   for (const [prefix, graph] of expected) {
     const [, actual] = entries.find(([name]) => name.startsWith(prefix));

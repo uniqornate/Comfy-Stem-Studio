@@ -23,6 +23,7 @@ import { GuideSepPanel, useGuideSepStatus } from './GuideSepPanel';
 import { normalizeGuidance } from './sam-guidance.mjs';
 import { ShortcutsPanel } from './ShortcutsPanel';
 import { BatchModal } from './BatchModal';
+import { BrushModal } from './BrushModal';
 import { normalizeMarkers } from './markers.mjs';
 import { clampFloat, resizeFloat } from './float-geometry.mjs';
 import { analyzeSource, suggestModel } from './source-profile.mjs';
@@ -99,6 +100,7 @@ function App() {
   const [markers, setMarkers] = useState<number[]>([]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [brushRegion, setBrushRegion] = useState<{ start: number; end: number } | null>(null);
   const [suggestion, setSuggestion] = useState<{ model: string; text: string; detail: string } | null>(null);
   const [sam, setSAM] = useSAMStatus(profile, samVariant);
   const [guide, setGuide] = useGuideSepStatus(profile);
@@ -256,7 +258,7 @@ function App() {
   }, [jobIdle]);
   useEffect(() => {
     if (job.phase !== 'complete' || !job.runId) return;
-    if (job.parentId && job.rootRunId) {
+    if (job.rootRunId) {
       setRuns(values => values.map(value => value.runId === job.rootRunId ? { ...value, stems: [...value.stems, ...job.stems.filter(stem => !value.stems.some(existing => existing.id === stem.id))] } : value));
     } else {
       setRuns(values => values.some(value => value.runId === job.runId) ? values : [...values, job].slice(-12));
@@ -330,6 +332,14 @@ function App() {
     if (!remaining.some(run => run.runId === activeId)) setSelectedRun(others ? id : remaining[Math.min(index, remaining.length - 1)]?.runId || '');
     setDetailRequest(null); setDetailOpen(false);
   }
+  async function runBrush(prompt: string) {
+    const region = brushRegion;
+    if (!window.desktop || !source || !region || !canSeparate) return;
+    setBrushRegion(null); transport.clearSelection(); setError(''); setSaveNotice('');
+    try { setJob(await window.desktop.separateStems(profile, source.url, { mode: 'brush', target: prompt, rootRunId: currentRun?.runId, brush: { prompt, seconds: region.end - region.start, start: region.start, seed: Math.floor(Math.random() * 2 ** 31) } })); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  }
+  async function refreshEngine() { if (window.desktop) setEngine(await window.desktop.checkEngine(profile)); }
   function chooseModel(id: string) { setModel(id); const kind = MODELS.find(item => item.id === id)?.kind; setModelModal(kind === 'prompt' ? 'sam' : kind === 'reference' ? 'guidesep' : null); }
   function makeReference(stem: Stem) { setReference({ name: stem.label, size: stem.size, url: stem.url }); setModel('guidesep'); setModelModal('guidesep'); setSaveNotice(`"${stem.label}" is now the GuideSep reference.`); }
   async function exportMixFile(options: MixExportOptions) {
@@ -431,7 +441,7 @@ function App() {
           onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { const box = clampFloat({ ...floatSize, left: drag.left + dx, top: drag.top + dy }, { width: window.innerWidth, height: window.innerHeight }); setFloatPosition({ x: box.left, y: box.top }); } }}
           onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloatBox} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onLoadedMetadata={event => setVideoRatio(event.currentTarget.videoWidth / event.currentTarget.videoHeight || 16 / 9)} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
       </div>
-      <StemTimeline closeTake={closeTake} key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
+      <StemTimeline brushAvailable={!!source && !!connected && !!engine?.ready && !jobBusy && !projectBusy} onBrush={region => setBrushRegion(region)} closeTake={closeTake} key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
       {saveNotice && !settings && <p className="save-notice" role="status"><Check size={14}/>{saveNotice}</p>}
       {error && !settings && <p className="error-banner" role="alert">{error}</p>}
@@ -445,6 +455,7 @@ function App() {
     {modelModal === 'guidesep' && <ModelModal icon={<Mic size={15}/>} title="GuideSep" close={() => setModelModal(null)} note={!source ? 'Open a source first' : !reference ? 'Choose a reference sound' : guideReady ? 'Pulls the matching instrument' : 'Prepare GuideSep first'} runLabel="Separate" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
       <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} offset={referenceOffset} setOffset={setReferenceOffset} busy={jobBusy} mixture={mixture} setMixture={setMixture} sourceName={source?.name}/>
     </ModelModal>}
+    {brushRegion && <BrushModal region={brushRegion} engine={engine} profile={profile} busy={jobBusy || !canSeparate} close={() => { setBrushRegion(null); transport.clearSelection(); }} refreshEngine={refreshEngine} run={prompt => void runBrush(prompt)}/>}
     {shortcutsOpen && <ShortcutsPanel close={() => setShortcutsOpen(false)}/>}
     {batchOpen && <BatchModal profile={profile} options={batchOptions} label={batchLabel} blocked={batchBlocked} close={() => setBatchOpen(false)}/>}
     {projectsOpen && <div className="modal-backdrop"><section className="connection-modal projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-title">

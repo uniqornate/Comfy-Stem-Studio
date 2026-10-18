@@ -7,7 +7,8 @@ NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
 try:
     import folder_paths
-    folder_paths.add_model_folder_path("audio_separation", str(Path(folder_paths.models_dir) / "audio_separation"))
+    from .model_paths import register as _register_model_paths
+    _register_model_paths(folder_paths)
 except ImportError:
     pass
 

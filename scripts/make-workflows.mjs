@@ -20,6 +20,13 @@ const defs = {
   StemStudioExtract: { inputs: [L('audio', 'AUDIO'), W('target', 'COMBO'), W('threshold', 'FLOAT'), W('auto_threshold', 'BOOLEAN')], outputs: [['target_sound', 'AUDIO'], ['remainder', 'AUDIO']], size: [320, 150] },
   StemStudioSAM: { inputs: [L('audio', 'AUDIO'), W('description', 'STRING'), W('model_variant', 'COMBO'), W('guidance_json', 'STRING'), L('video', 'VIDEO'), W('video_start', 'FLOAT')], outputs: [['target', 'AUDIO'], ['remainder', 'AUDIO']], size: [340, 220] },
   StemStudioGuideSep: { inputs: [L('audio', 'AUDIO'), L('reference', 'AUDIO'), W('steps', 'INT'), W('reference_offset', 'FLOAT')], outputs: [['target', 'AUDIO'], ['remainder', 'AUDIO']], size: [320, 110] },
+  CheckpointLoaderSimple: { inputs: [W('ckpt_name', 'COMBO')], outputs: [['MODEL', 'MODEL'], ['CLIP', 'CLIP'], ['VAE', 'VAE']], size: [330, 100] },
+  CLIPLoader: { inputs: [W('clip_name', 'COMBO'), W('type', 'COMBO'), W('device', 'COMBO')], outputs: [['CLIP', 'CLIP']], size: [330, 120] },
+  CLIPTextEncode: { inputs: [L('clip', 'CLIP'), W('text', 'STRING')], outputs: [['CONDITIONING', 'CONDITIONING']], size: [330, 120] },
+  EmptyLatentAudio: { inputs: [W('seconds', 'FLOAT'), W('batch_size', 'INT')], outputs: [['LATENT', 'LATENT']], size: [300, 90] },
+  KSampler: { inputs: [L('model', 'MODEL'), L('positive', 'CONDITIONING'), L('negative', 'CONDITIONING'), L('latent_image', 'LATENT'), W('seed', 'INT'), W('steps', 'INT'), W('cfg', 'FLOAT'), W('sampler_name', 'COMBO'), W('scheduler', 'COMBO'), W('denoise', 'FLOAT')], outputs: [['LATENT', 'LATENT']], size: [320, 260] },
+  VAEDecodeAudio: { inputs: [L('samples', 'LATENT'), L('vae', 'VAE')], outputs: [['AUDIO', 'AUDIO']], size: [260, 70] },
+  StemStudioRestoreRange: { inputs: [L('audio', 'AUDIO'), L('reference', 'AUDIO'), W('start_seconds', 'FLOAT')], outputs: [['AUDIO', 'AUDIO']], size: [320, 100] },
   Note: { inputs: [], outputs: [], size: [420, 200] },
 };
 
@@ -136,6 +143,26 @@ const workflows = {
   },
 };
 
+workflows['Stem-Studio_06_Paint-A-Sound-Stable-Audio-3'] = {
+  title: 'Paint a sound into a region (Stable Audio 3 Small-SFX)',
+  ui: build('Paint a sound into a region (Stable Audio 3 Small-SFX)', setup, {
+    nodes: [
+      note(`${setup}\n\nThe brush of Stem Studio as plain ComfyUI nodes. Needs stable_audio_3_small_sfx.safetensors (checkpoints) and t5gemma_b_b_ul2.safetensors (text encoders) from huggingface.co/Comfy-Org/stable-audio-3, under the Stability AI Community License. Edit the prompt and the length in Empty Latent Audio (seconds). Restore Range places the painted clip at start_seconds on the full length of the loaded file and leaves the rest silent, so the result lines up with your timeline.`),
+      { key: 'load', type: 'LoadAudio', pos: [20, 60], widgets: ['your-audio-or-video.wav', null, null], title: 'Source (sets the final length)' },
+      { key: 'ckpt', type: 'CheckpointLoaderSimple', pos: [20, 260], widgets: ['stable_audio_3_small_sfx.safetensors'] },
+      { key: 'clip', type: 'CLIPLoader', pos: [20, 400], widgets: ['t5gemma_b_b_ul2.safetensors', 'stable_audio', 'default'] },
+      { key: 'prompt', type: 'CLIPTextEncode', pos: [400, 40], widgets: ['slow footsteps on wet gravel, close up'], title: 'Prompt' },
+      { key: 'negative', type: 'CLIPTextEncode', pos: [400, 200], widgets: [''], title: 'Negative prompt' },
+      { key: 'latent', type: 'EmptyLatentAudio', pos: [400, 360], widgets: [3, 1] },
+      { key: 'sampler', type: 'KSampler', pos: [780, 60], widgets: [12345, 8, 1, 'lcm', 'simple', 1] },
+      { key: 'decode', type: 'VAEDecodeAudio', pos: [1140, 60] },
+      { key: 'place', type: 'StemStudioRestoreRange', pos: [1140, 200], widgets: [2] },
+      save('out', [1520, 160], 'StemStudio/brush'),
+    ],
+    links: [['clip', 0, 'prompt', 'clip'], ['clip', 0, 'negative', 'clip'], ['ckpt', 0, 'sampler', 'model'], ['prompt', 0, 'sampler', 'positive'], ['negative', 0, 'sampler', 'negative'], ['latent', 0, 'sampler', 'latent_image'], ['sampler', 0, 'decode', 'samples'], ['ckpt', 2, 'decode', 'vae'], ['decode', 0, 'place', 'audio'], ['load', 0, 'place', 'reference'], ['place', 0, 'out', 'audio']],
+  }),
+  api: stemWorkflow({ mode: 'brush', target: 'footsteps', brush: { prompt: 'slow footsteps on wet gravel, close up', seconds: 3, start: 2, seed: 12345 } }),
+};
 await mkdir(join(root, 'api'), { recursive: true });
 for (const [name, item] of Object.entries(workflows)) {
   const api = structuredClone(item.api);

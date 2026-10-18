@@ -22,6 +22,10 @@ Goal: a timeline brush that fills a selected region of a new channel with a soun
 | Stable Audio 3 Medium | Longer music and SFX, 1.4B per one report, needs a GPU | up to about 6:20 | same | More than a brush needs. |
 | Stable Audio Open Small (2025) | 341M text-to-audio | about 11 s of audio in under 8 s on a phone CPU | Stability AI Community License | Fallback if Small-SFX is unavailable. |
 
+## Status
+
+Phase 1 is implemented: the timeline brush paints a prompt into a new channel with Stable Audio 3 Small-SFX through ComfyUI's native nodes (`electron/brush.mjs`, `electron/brush-manager.mjs`, `src/BrushModal.tsx`, workflow `Stem-Studio_06`). The two files (from [Comfy-Org/stable-audio-3](https://huggingface.co/Comfy-Org/stable-audio-3), not gated, hash pinned) live in `models/audio_separation/stable-audio-3`, which the StemStudio node adds to ComfyUI's checkpoint and text encoder lists. Sampler settings (8 steps, cfg 1, lcm, simple) are copied from the Medium template shipped with ComfyUI; they were not checked on Small-SFX itself. Phase 2 (video-aware) is open.
+
 ## Recommendation
 
 1. **Phase 1, ship first:** a brush backed by **Stable Audio 3 Small-SFX** through native ComfyUI nodes. A prompt plus the painted region gives a new channel with the effect placed at that time (padded with the existing `StemStudioRestoreRange`); painting over an existing channel uses inpainting. Small, fast, official ComfyUI support, works on audio-only sources, and its license is the most permissive of the set.

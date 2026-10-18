@@ -9,6 +9,7 @@ import { AudioRenderer } from './audio-render.mjs';
 import { SAMManager } from './sam-manager.mjs';
 import { GuideSepManager } from './guidesep-manager.mjs';
 import { BatchRunner, safeName } from './batch.mjs';
+import { BrushModelManager } from './brush-manager.mjs';
 import { MixExporter, writeWav } from './mix-export.mjs';
 import { audioFilters, isAudioPath, isSourcePath, sourceFilters } from './media-types.mjs';
 import { Projects } from './projects.mjs';
@@ -52,6 +53,7 @@ app.whenReady().then(async () => {
   const batchSeparation = new Separation(join(app.getPath('userData'), 'batch-cache'), expose);
   const batch = new BatchRunner(batchSeparation);
   const mixExporter = new MixExporter();
+  const brushModel = new BrushModelManager();
   audioRenderer = new AudioRenderer(join(app.getPath('userData'), 'edited-audio'));
   const projects = new Projects(app.getPath('userData'), separation, sources, expose);
   const assertExportTarget = async target => {
@@ -171,6 +173,9 @@ app.whenReady().then(async () => {
     }
     return batch.start(sanitize(profile), files, batchFolder, job, tag);
   });
+  handle('brush:status', profile => brushModel.status(sanitize(profile)));
+  handle('brush:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return brushModel.start(sanitize(profile)); });
+  handle('brush:cancel', () => brushModel.cancel());
   handle('batch:status', () => batch.snapshot());
   handle('batch:cancel', () => { batch.cancel(); return batch.snapshot(); });
   handle('mix:export', async (profile, options) => {

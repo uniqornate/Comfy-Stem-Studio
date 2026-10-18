@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-36 | WAITING_USER | Claude | Brush tool phase 1: prompt-painted sound effects into a new channel with Stable Audio 3 Small-SFX via native ComfyUI nodes (0.12.4 source, not packaged). | User tries the brush in `npm run dev` with ComfyUI running, downloads the sound model from the brush dialog and reports quality and any ComfyUI node mismatch. |
 | W-20261017-35 | WAITING_USER | Claude | A/B compare removed; closable take tabs; SAM box only between its marks (UI and node); SAM sound-example span bar; ComfyUI auto-install in setup; model location rule documented; brush-tool model research (0.12.3 source, not packaged). | User checks each item in `npm run dev`; setup changes need an installer build and a real run. |
 | W-20261017-34 | WAITING_USER | Claude | Feedback round: range-gain waveform feedback, video scrub coalescing, proportional floating preview, single-row telemetry, SAM visual tolerance, GuideSep on another audio file (0.12.2 source). | User checks each item in `npm run dev`. |
 | W-20261017-33 | WAITING_USER | Claude | Eight suggested features: markers and section loops, batch processing, A/B take compare with loudness matching, mix export (WAV/FLAC), SAM/any channel as GuideSep reference, shortcut panel, source-based model suggestion, GuideSep reference offset (0.12.1 source, not packaged). | User tries each feature in `npm run dev`; reinstall integration and restart idle ComfyUI for the GuideSep offset. |
@@ -55,6 +56,16 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-36: Brush tool, phase 1
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-18T23:40:00+03:00 | Work: W-20261017-36
+  Change: Timeline brush mode (toolbar button, drag a region, Esc to leave) opens a prompt dialog and runs job mode `brush`: CheckpointLoaderSimple (stable_audio_3_small_sfx.safetensors), CLIPLoader (t5gemma_b_b_ul2.safetensors, type stable_audio), two CLIPTextEncode, EmptyLatentAudio (region length), KSampler (8 steps, cfg 1, lcm, simple, random seed), VAEDecodeAudio, StemStudioRestoreRange (pads to the source timeline at the region start), SaveAudio. Result is a new root channel in the current take (a new take if none). The dialog can download the two pinned files (Comfy-Org/stable-audio-3, not gated, SHA-256 checked, resumable) into models/audio_separation/stable-audio-3; the node registers that folder with ComfyUI's checkpoint and text encoder lists. Engine status reports `brush` and `brushModel`. Shared downloader moved to setup/download-verified.mjs. Workflow Stem-Studio_06 added.
+  Validation: TypeScript, Vite build, 156 JS tests and 10 Python tests pass. New tests cover settings validation, the graph, capability flags, manifest pins, download and hash failure, the job result shape and the folder registration with a fake folder_paths. Not run: the real ComfyUI graph, the real 3.4 GB download, the dialog UI.
+  Limits: Sampler settings are copied from the Medium template in the user's ComfyUI, not verified on Small-SFX. ComfyUI must support Stable Audio 3 (this checkout of 0.40 does). Max 60 s per region. No inpainting over existing audio and no video awareness yet (phase 2 in docs/BRUSH_RESEARCH.md).
+  Artifacts: electron/{brush,brush-manager}.mjs, electron/{separation,node-capabilities,main,preload}, setup/download-verified.mjs, comfy_nodes/StemStudio/{model_paths.py,__init__.py}, src/{BrushModal,StemTimeline,main}.tsx, scripts/make-workflows.mjs, workflows/**, tests, docs.
+  Next: User tries it; then decide on phase 2 (video-aware model).
 
 ### W-20261017-35: Tabs, SAM guidance, ComfyUI auto-install, brush research
 

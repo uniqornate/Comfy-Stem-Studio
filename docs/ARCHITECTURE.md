@@ -146,3 +146,8 @@ MediaTransport owns normalized source-time selection and loopLocked. Snapshots i
 - Mix export renders offline in the renderer (OfflineAudioContext following the same clip and gain segments as playback); WAV is written directly, FLAC is produced by ComfyUI SaveAudio from a 24-bit render (electron/mix-export.mjs).
 - Batch (electron/batch.mjs) uses its own Separation instance and an output folder chosen in a native dialog and remembered in the main process, so the renderer never supplies a path to write to.
 - GuideSep node gained an optional reference_offset input (seconds, negative skips the start of the reference).
+
+## 0.12.4 additions
+
+- Brush (phase 1): `StemTimeline` brush mode turns a drag into a region and opens `BrushModal`; the job is mode `brush` in `Separation`, built by `electron/brush.mjs` from native ComfyUI nodes (CheckpointLoaderSimple, CLIPLoader type stable_audio, CLIPTextEncode, EmptyLatentAudio, KSampler, VAEDecodeAudio) plus `StemStudioRestoreRange` to pad the clip to the source timeline. The engine reports `brush` (nodes present) and `brushModel` (both files listed by the loaders). A finished job with a `rootRunId` and no parent appends a new root channel to that take.
+- `electron/brush-manager.mjs` downloads the two pinned files with `setup/download-verified.mjs` (resumable, SHA-256 checked, also used by the ComfyUI installer). `comfy_nodes/StemStudio/model_paths.py` registers the folder with ComfyUI's checkpoint and text encoder categories.

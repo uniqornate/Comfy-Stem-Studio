@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, Flag, Layers, Mic, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
+import { ArrowDownToLine, Flag, Layers, Mic, Paintbrush, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
 import { fitEdit as channelEdit, splitEdit, trimEdit, gainEdit, gainAt, type ChannelEdit } from './clip-edits.mjs';
 import { pointerTime } from './timeline-geometry.mjs';
 import { groupedTracks, initialMix } from './detail-groups.mjs';
@@ -17,7 +17,7 @@ type Mix = { mute: boolean; solo: boolean; level: number; restoreMute?: boolean 
 type Snapshot = { mix: Record<string, Mix>; edits: Record<string, ChannelEdit> };
 type Take = { id: string; label: string };
 type Track = { stem: Stem; buffer: AudioBuffer; peaks: number[]; path: string; peak: number };
-type Props = { closeTake: (id: string, others?: boolean) => void; markers: number[]; setMarkers: (markers: number[]) => void; useAsReference: (stem: Stem) => void; exportMixFile: (options: MixExportOptions) => Promise<string | null>; sourceName: string; takes: Take[]; selectedTake: string; selectTake: (id: string) => void; canExportVideo: boolean; initialView?: TimelineView; onViewChange: (view: TimelineView) => void; stems: Stem[]; save: (id?: string) => void; exporting: boolean; independent?: boolean; transport: MediaTransport; playback: TransportState; exportVideo: (mix: Record<string, Mix>) => void; expanded: boolean; toggleExpanded: () => void; resize: (delta: number) => void; resetSize: () => void; workspaceHeight: number; resizeBounds: { min: number; max: number }; details: (stem: Stem, start: number, end: number, picker: boolean) => void; detailBusy: boolean; detailAvailable: boolean };
+type Props = { brushAvailable: boolean; onBrush: (region: { start: number; end: number }) => void; closeTake: (id: string, others?: boolean) => void; markers: number[]; setMarkers: (markers: number[]) => void; useAsReference: (stem: Stem) => void; exportMixFile: (options: MixExportOptions) => Promise<string | null>; sourceName: string; takes: Take[]; selectedTake: string; selectTake: (id: string) => void; canExportVideo: boolean; initialView?: TimelineView; onViewChange: (view: TimelineView) => void; stems: Stem[]; save: (id?: string) => void; exporting: boolean; independent?: boolean; transport: MediaTransport; playback: TransportState; exportVideo: (mix: Record<string, Mix>) => void; expanded: boolean; toggleExpanded: () => void; resize: (delta: number) => void; resetSize: () => void; workspaceHeight: number; resizeBounds: { min: number; max: number }; details: (stem: Stem, start: number, end: number, picker: boolean) => void; detailBusy: boolean; detailAvailable: boolean };
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, '0')}`;
 function peaks(buffer: AudioBuffer) {
   const count = Math.min(2200, buffer.length), result = new Array(count).fill(0);
@@ -50,7 +50,7 @@ function TimelineScrub({ transport, duration }: { transport: MediaTransport; dur
   const position = usePosition(transport);
   return <input className="timeline-scrub" type="range" min="0" max={duration || 1} step="0.01" value={position} onChange={event => transport.scrub(Number(event.target.value))} aria-label="Timeline playhead"/>;
 }
-export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, exportMixFile, sourceName, takes, selectedTake, selectTake, canExportVideo, initialView, onViewChange, stems, save, exporting, independent = false, transport, playback, exportVideo, expanded, toggleExpanded, resize, resetSize, workspaceHeight, resizeBounds, details, detailBusy, detailAvailable }: Props) {
+export function StemTimeline({ brushAvailable, onBrush, closeTake, markers, setMarkers, useAsReference, exportMixFile, sourceName, takes, selectedTake, selectTake, canExportVideo, initialView, onViewChange, stems, save, exporting, independent = false, transport, playback, exportVideo, expanded, toggleExpanded, resize, resetSize, workspaceHeight, resizeBounds, details, detailBusy, detailAvailable }: Props) {
   const [tracks, setTracks] = useState<Track[]>([]), [mix, setMix] = useState<Record<string, Mix>>(() => normalizeSolo(initialView?.mix || {}));
   const mixRef = useRef(mix); mixRef.current = mix;
   const cache = useRef(new Map<string, Track>());
@@ -67,6 +67,14 @@ export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, e
   };
   const travelRef = useRef(travel); travelRef.current = travel;
   const [mixOpen, setMixOpen] = useState(false);
+  const [brushMode, setBrushMode] = useState(false);
+  const brushRef = useRef({ brushMode, onBrush }); brushRef.current = { brushMode, onBrush };
+  useEffect(() => { if (!brushAvailable) setBrushMode(false); }, [brushAvailable]);
+  useEffect(() => {
+    if (!brushMode) return;
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('.modal-backdrop')) setBrushMode(false); };
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+  }, [brushMode]);
   const [takeMenu, setTakeMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   useEffect(() => {
     if (!takeMenu) return;
@@ -184,8 +192,9 @@ export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, e
   function seekPointer(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 0 || gesture.current || pan.current || editDrag.current) return;
     event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
-    const at = point(event); gesture.current = { kind: event.shiftKey ? 'select' : 'seek', anchor: at };
-    if (event.shiftKey) transport.setSelection(at, at); else seek(at);
+    const at = point(event); const selecting = event.shiftKey || brushRef.current.brushMode;
+    gesture.current = { kind: selecting ? 'select' : 'seek', anchor: at };
+    if (selecting) transport.setSelection(at, at); else seek(at);
   }
   function dragSeek(event: React.PointerEvent<HTMLElement>) {
     if (!gesture.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
@@ -194,7 +203,11 @@ export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, e
   function endSeek(event: React.PointerEvent<HTMLElement>) {
     if (!gesture.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     const selecting = gesture.current.kind === 'select'; dragSeek(event); gesture.current = null; event.currentTarget.releasePointerCapture(event.pointerId);
-    if (selecting) void transport.commitSelection();
+    if (!selecting) return;
+    if (brushRef.current.brushMode && !event.shiftKey) {
+      const region = transport.snapshot().selection;
+      if (region && region.end - region.start >= 0.5) brushRef.current.onBrush(region); else transport.clearSelection();
+    } else void transport.commitSelection();
   }
   function panStart(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 1 || gesture.current || pan.current) return;
@@ -208,7 +221,7 @@ export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, e
   function context(event: React.MouseEvent<HTMLElement>, stem: Stem) { event.preventDefault(); const lane = event.currentTarget.closest('.timeline-track')?.querySelector('.waveform-lane'); const rect = lane?.getBoundingClientRect(); const at = rect && event.currentTarget.classList.contains('waveform-lane') ? pointerTime(event.clientX, rect.left, rect.width, duration) : transport.snapshot().position; setMenu({ stem, at, x: Math.max(4, Math.min(event.clientX, window.innerWidth - 235)), y: Math.max(4, Math.min(event.clientY, window.innerHeight - 265)) }); }
   const rows = groupedTracks(stems, collapsed).map(row => ({ ...row, track: tracks.find(track => track.stem.id === row.stem.id) })).filter(row => !!row.track);
   const ticks = Array.from({ length: 11 }, (_, i) => duration * i / 10);
-  return <section ref={section} style={{ '--wave-height': waveHeight } as React.CSSProperties} className={`panel multitrack ${panning ? 'is-panning' : ''}`} aria-label="Stem timeline">
+  return <section ref={section} style={{ '--wave-height': waveHeight } as React.CSSProperties} className={`panel multitrack ${panning ? 'is-panning' : ''} ${brushMode ? 'is-brush' : ''}`} aria-label="Stem timeline">
     {!expanded && <div className="timeline-resize-handle" role="separator" aria-orientation="horizontal" aria-label="Resize timeline" aria-valuemin={Math.round(resizeBounds.min)} aria-valuemax={Math.round(resizeBounds.max)} aria-valuenow={Math.round(workspaceHeight)} tabIndex={0} title="Drag to resize. Double-click to reset."
       onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); resizeY.current = event.clientY; event.currentTarget.setPointerCapture(event.pointerId); }}
       onPointerMove={event => { if (resizeY.current === null) return; const delta = event.clientY - resizeY.current; resizeY.current = event.clientY; resize(delta); }}
@@ -227,6 +240,7 @@ export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, e
         </div>
       </div>
       <div className="toolbar-bank view-bank"><button className="icon-button timeline-expand" aria-label={expanded ? 'Restore workspace layout' : 'Expand timeline'} aria-pressed={expanded} data-tip={expanded ? 'Restore layout' : 'Expand timeline'} onClick={toggleExpanded}>{expanded ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="toolbar-bank brush-bank"><button className={`icon-button ${brushMode ? 'is-active' : ''}`} disabled={!brushAvailable} aria-pressed={brushMode} aria-label="Brush" data-tip={brushAvailable ? 'Brush\nDrag over a region, then describe the sound to paint into a new channel. Esc to leave.' : 'Brush\nOpen a source and connect to ComfyUI first.'} onClick={() => setBrushMode(value => !value)}><Paintbrush size={14}/></button></div>
       <div className="toolbar-bank marker-bank"><button className="icon-button" disabled={!duration} aria-label="Add or remove a marker at the playhead" data-tip={'Marker\nM adds or removes one at the playhead. , and . jump between markers. Double-click the ruler to loop a section.'} onClick={() => setMarkers(toggleMarker(markers, transport.snapshot().position, duration))}><Flag size={14}/></button></div>
       <div className="toolbar-bank history-bank"><button className="icon-button" disabled={!historyState.undo} aria-label="Undo" data-tip={'Undo\nCtrl+Z'} onClick={() => travel('undo')}><Undo2 size={14}/></button><button className="icon-button" disabled={!historyState.redo} aria-label="Redo" data-tip={'Redo\nCtrl+Shift+Z or Ctrl+Y'} onClick={() => travel('redo')}><Redo2 size={14}/></button></div>
       <div className="toolbar-bank range-bank">{selection ? <><output>{clock(selection.start)} → {clock(selection.end)}</output><button className={`icon-button loop-lock ${loopLocked ? 'is-active' : ''}`} aria-label="Loop-lock selection" aria-pressed={loopLocked} data-tip={loopLocked ? 'Unlock loop' : 'Loop selected range'} onClick={lockLoop}><Repeat2 size={14}/>{loopLocked && <LockKeyhole size={9}/>}</button><button className="icon-button" aria-label="Clear selection" data-tip="Clear selection" onClick={() => transport.clearSelection()}><X size={12}/></button></> : <span className="range-hint" data-tip={'Select a range\nShift + drag on the timeline to select and loop a range.'}><Repeat2 size={13}/></span>}</div>
