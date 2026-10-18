@@ -24,6 +24,7 @@ import { normalizeGuidance } from './sam-guidance.mjs';
 import { ShortcutsPanel } from './ShortcutsPanel';
 import { BatchModal } from './BatchModal';
 import { normalizeMarkers } from './markers.mjs';
+import { clampFloat, resizeFloat } from './float-geometry.mjs';
 import { matchGainDb } from './mixdown.mjs';
 import { analyzeSource, suggestModel } from './source-profile.mjs';
 import type { BatchOptions, MixExportOptions } from './types';
@@ -95,6 +96,7 @@ function App() {
   const [sourceGuidance, setSourceGuidance] = useState<SAMGuidance>({});
   const [reference, setReference] = useState<ReferenceAudio | null>(null);
   const [referenceOffset, setReferenceOffset] = useState(0);
+  const [mixture, setMixture] = useState<ReferenceAudio | null>(null);
   const [markers, setMarkers] = useState<number[]>([]);
   const [abPrev, setAbPrev] = useState('');
   const [loudness, setLoudness] = useState<Record<string, number>>({});
@@ -105,14 +107,14 @@ function App() {
   const [sam, setSAM] = useSAMStatus(profile, samVariant);
   const [guide, setGuide] = useGuideSepStatus(profile);
   const [floatPosition, setFloatPosition] = useState({ x: Math.max(8, window.innerWidth - 340), y: 90 });
-  const [floatSize, setFloatSize] = useState({ width: 320, height: 180 });
+  const [floatWidth, setFloatWidth] = useState(320);
+  const [videoRatio, setVideoRatio] = useState(16 / 9);
+  const floatSize = { width: floatWidth, height: floatWidth / videoRatio };
   const floatResize = useRef<{ edge: string; x: number; y: number; width: number; height: number; left: number; top: number } | null>(null);
-  function resizeFloat(event: React.PointerEvent<HTMLDivElement>) {
+  function resizeFloatBox(event: React.PointerEvent<HTMLDivElement>) {
     const d = floatResize.current; if (!d) return; event.preventDefault(); event.stopPropagation();
-    const dx = event.clientX-d.x, dy=event.clientY-d.y;
-    const width = Math.max(180,Math.min(window.innerWidth-16,d.width+(d.edge.includes('w')?-dx:d.edge.includes('e')?dx:0)));
-    const height = Math.max(100,Math.min(window.innerHeight-70,d.height+(d.edge.includes('n')?-dy:d.edge.includes('s')?dy:0)));
-    setFloatSize({width,height});setFloatPosition({x:Math.max(0,Math.min(window.innerWidth-width,d.left+(d.edge.includes('w')?d.width-width:0))),y:Math.max(0,Math.min(window.innerHeight-height,d.top+(d.edge.includes('n')?d.height-height:0)))}); floatMoved.current=true;
+    const box = resizeFloat({ edge: d.edge, start: d, dx: event.clientX - d.x, dy: event.clientY - d.y, ratio: videoRatio, viewport: { width: window.innerWidth, height: window.innerHeight } });
+    setFloatWidth(box.width); setFloatPosition({ x: box.left, y: box.top }); floatMoved.current = true;
   }
   const floatDrag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   const floatMoved = useRef(false);
@@ -171,7 +173,7 @@ function App() {
     const share = value.view.workspaceShare; setWorkspaceShare(typeof share === 'number' ? Math.max(.1, Math.min(.9, share)) : .46);
     setTimelineExpanded(value.view.timelineExpanded === true);
     const floating = value.view.floatPosition; if (floating && Number.isFinite(floating.x) && Number.isFinite(floating.y)) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - 100, floating.x)), y: Math.max(0, Math.min(window.innerHeight - 60, floating.y)) });
-    if (value.view.floatSize) setFloatSize({width:Math.max(180,Math.min(window.innerWidth-16,value.view.floatSize.width)),height:Math.max(100,Math.min(window.innerHeight-70,value.view.floatSize.height))});
+    if (value.view.floatSize) setFloatWidth(Math.max(180, Math.min(window.innerWidth - 16, value.view.floatSize.width)));
     setExportMode(value.view.exportMode === 'tracks' ? 'tracks' : 'mix');
     setMarkers(normalizeMarkers(value.view.markers)); setAbPrev(''); setLoudness({});
     setProjectStatus('Saved'); setError(value.warnings.join(' '));
@@ -281,7 +283,7 @@ function App() {
   if (modelKind === 'prompt') { try { if (!sourceGuidance.visualOnly && !sourceGuidance.description?.trim()) throw Error('Describe the sound you want, or draw a visual target.'); normalizeGuidance(sourceGuidance, wholeRange); } catch (cause) { sourceGuidanceError = cause instanceof Error ? cause.message : String(cause); } }
   const samReady = !!engine?.sam && !!engine?.samPrompts && !!sam?.ready;
   const guideReady = !!engine?.guidesep && !!guide?.ready && !!reference;
-  const modelReady = modelKind === 'stems' || (playback.duration > 0 && (modelKind === 'prompt' ? samReady && !sourceGuidanceError : guideReady));
+  const modelReady = modelKind === 'stems' || (playback.duration > 0 && (modelKind === 'prompt' ? samReady && !sourceGuidanceError : guideReady)) || (modelKind === 'reference' && guideReady && !!mixture);
   const runLabel = modelKind === 'stems' ? 'Separate stems' : modelKind === 'prompt' ? 'Extract sound' : 'Separate with reference';
   const separationHint = !source ? 'Choose a source first.' : !connected ? 'Check your ComfyUI and proxy connection first.' : !engine?.ready ? 'Audio engine is not ready. Check connection settings or retry setup.' : modelKind === 'prompt' ? (!samReady ? 'Prepare SAM Audio first.' : sourceGuidanceError || 'SAM Audio pulls the described sound from the whole source.') : modelKind === 'reference' ? (!guideReady ? 'Prepare GuideSep and choose a reference sound first.' : 'GuideSep pulls the instrument that matches your reference.') : 'Three mono stems. The original source stays untouched.';
   async function separate() {
@@ -292,7 +294,8 @@ function App() {
         const label = sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description!.trim();
         setJob(await window.desktop.separateStems(profile, source.url, { mode: 'sam', samModel: samVariant, target: label, threshold: 0.1, range: wholeRange, sam: sourceGuidance, videoUrl: source.url }));
       } else if (modelKind === 'reference' && reference) {
-        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, referenceOffset, range: wholeRange }));
+        // A chosen audio file replaces the loaded source as the mixture; it has its own length, so no timeline range applies.
+        setJob(await window.desktop.separateStems(profile, mixture?.url || source.url, { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, referenceOffset, ...(mixture ? {} : { range: wholeRange }) }));
       } else setJob(await window.desktop.separateStems(profile, source.url, { model, mode: 'stems' }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
@@ -425,8 +428,8 @@ function App() {
         </aside>
         <section className={`panel preview-panel ${timelineExpanded && source ? 'floating-preview' : ''}`} style={timelineExpanded ? { left: floatPosition.x, top: floatPosition.y, width: floatSize.width, height: floatSize.height, maxWidth: "none", aspectRatio: "auto" } : undefined} onClick={() => { if (timelineExpanded && !floatMoved.current) void transport.toggle(); floatMoved.current = false; }}
           onPointerDown={event => { if (!timelineExpanded || !source || event.button !== 0) return; floatMoved.current = false; floatDrag.current = { x: event.clientX, y: event.clientY, left: floatPosition.x, top: floatPosition.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); }}
-          onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - event.currentTarget.offsetWidth, drag.left + dx)), y: Math.max(0, Math.min(window.innerHeight - event.currentTarget.offsetHeight, drag.top + dy)) }); }}
-          onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloat} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
+          onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { const box = clampFloat({ ...floatSize, left: drag.left + dx, top: drag.top + dy }, { width: window.innerWidth, height: window.innerHeight }); setFloatPosition({ x: box.left, y: box.top }); } }}
+          onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloatBox} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onLoadedMetadata={event => setVideoRatio(event.currentTarget.videoWidth / event.currentTarget.videoHeight || 16 / 9)} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
       </div>
       <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} onAB={() => { if (abTarget) pickRun(abTarget); }} abReady={!!abTarget} matchLoudness={matchLoudness} setMatchLoudness={setMatchLoudness} onLoudness={onLoudness} masterGain={masterGain} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
@@ -440,7 +443,7 @@ function App() {
       <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={samVariant} busy={jobBusy}/>
     </ModelModal>}
     {modelModal === 'guidesep' && <ModelModal icon={<Mic size={15}/>} title="GuideSep" close={() => setModelModal(null)} note={!source ? 'Open a source first' : !reference ? 'Choose a reference sound' : guideReady ? 'Pulls the matching instrument' : 'Prepare GuideSep first'} runLabel="Separate" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
-      <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} offset={referenceOffset} setOffset={setReferenceOffset} busy={jobBusy}/>
+      <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} offset={referenceOffset} setOffset={setReferenceOffset} busy={jobBusy} mixture={mixture} setMixture={setMixture} sourceName={source?.name}/>
     </ModelModal>}
     {shortcutsOpen && <ShortcutsPanel close={() => setShortcutsOpen(false)}/>}
     {batchOpen && <BatchModal profile={profile} options={batchOptions} label={batchLabel} blocked={batchBlocked} close={() => setBatchOpen(false)}/>}

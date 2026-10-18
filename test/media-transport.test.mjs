@@ -143,3 +143,24 @@ test('master gain scales every channel for loudness matching and is clamped', as
   assert.deepEqual([...transport.gains.values()].map(gain => gain.gain.value), [0, 0.5]);
   transport.dispose();
 });
+
+test('scrubbing keeps only the newest target while a seek is in flight and shows it immediately', () => {
+  const { transport, video } = fixture();
+  transport.scrub(2); assert.equal(video.currentTime, 2);
+  video.seeking = true; transport.scrub(4); transport.scrub(6);
+  assert.equal(video.currentTime, 2); assert.equal(transport.snapshot().position, 6);
+  video.seeking = false; video.dispatchEvent(new Event('seeked'));
+  assert.equal(video.currentTime, 6); assert.equal(transport.snapshot().position, 6);
+  video.seeking = true; transport.scrub(8); transport.seek(1);
+  video.seeking = false; video.dispatchEvent(new Event('seeked'));
+  assert.equal(video.currentTime, 1); assert.equal(transport.snapshot().position, 1);
+  transport.dispose();
+});
+test('scrubbing respects a locked loop range and a failed video clears the pending target', () => {
+  const { transport, video } = fixture();
+  transport.setSelection(2, 4); transport.setLoopLocked(true); transport.scrub(9);
+  assert.equal(video.currentTime, 2);
+  video.seeking = true; transport.scrub(3.5); video.dispatchEvent(new Event('error'));
+  assert.equal(transport.snapshot().position, 2);
+  transport.dispose();
+});

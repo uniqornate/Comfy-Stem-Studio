@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeftRight, Flag, Layers, Mic, Volume2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
 import { fitEdit as channelEdit, splitEdit, trimEdit, gainEdit, gainAt, type ChannelEdit } from './clip-edits.mjs';
 import { pointerTime } from './timeline-geometry.mjs';
@@ -17,7 +17,7 @@ import { toggleMute, toggleSolo, normalizeSolo } from './solo.mjs';
 type Mix = { mute: boolean; solo: boolean; level: number; restoreMute?: boolean };
 type Snapshot = { mix: Record<string, Mix>; edits: Record<string, ChannelEdit> };
 type Take = { id: string; label: string };
-type Track = { stem: Stem; buffer: AudioBuffer; peaks: number[]; path: string };
+type Track = { stem: Stem; buffer: AudioBuffer; peaks: number[]; path: string; peak: number };
 type Props = { markers: number[]; setMarkers: (markers: number[]) => void; onAB: () => void; abReady: boolean; matchLoudness: boolean; setMatchLoudness: (value: boolean) => void; onLoudness: (id: string, db: number) => void; masterGain: number; useAsReference: (stem: Stem) => void; exportMixFile: (options: MixExportOptions) => Promise<string | null>; sourceName: string; takes: Take[]; selectedTake: string; selectTake: (id: string) => void; canExportVideo: boolean; initialView?: TimelineView; onViewChange: (view: TimelineView) => void; stems: Stem[]; save: (id?: string) => void; exporting: boolean; independent?: boolean; transport: MediaTransport; playback: TransportState; exportVideo: (mix: Record<string, Mix>) => void; expanded: boolean; toggleExpanded: () => void; resize: (delta: number) => void; resetSize: () => void; workspaceHeight: number; resizeBounds: { min: number; max: number }; details: (stem: Stem, start: number, end: number, picker: boolean) => void; detailBusy: boolean; detailAvailable: boolean };
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, '0')}`;
 function peaks(buffer: AudioBuffer) {
@@ -28,9 +28,28 @@ function peaks(buffer: AudioBuffer) {
   }
   return result;
 }
+type Gain = { start: number; end: number; db: number };
+const NO_GAINS: Gain[] = [];
+// Draws a clip's waveform. Regions with a gain change are drawn at their new size, on top of the global height knob,
+// so the picture always shows what the volume line is doing.
+const ClipWave = memo(function ClipWave({ label, data, peak, path, duration, clip, gains }: { label: string; data: number[]; peak: number; path: string; duration: number; clip: { start: number; end: number }; gains: Gain[] }) {
+  const total = Math.max(duration, .001), first = Math.floor(clip.start / total * data.length), last = Math.min(data.length, Math.ceil(clip.end / total * data.length));
+  const active = gains.filter(region => region.db !== 0 && region.end > clip.start && region.start < clip.end);
+  const d = useMemo(() => {
+    if (!active.length) return path;
+    const parts: string[] = [];
+    for (let i = first; i < last; i++) {
+      const time = (i + .5) / data.length * total, region = active.find(item => time >= item.start && time < item.end);
+      const level = Math.min(16, data[i] / peak * (region ? 10 ** (region.db / 20) : 1));
+      parts.push(`M${i},${40 - level * 40}v${level * 80}`);
+    }
+    return parts.join(' ');
+  }, [active.map(region => `${region.start}:${region.end}:${region.db}`).join('|'), path, data, peak, first, last, total]);
+  return <svg viewBox={`${clip.start / total * data.length} 0 ${(clip.end - clip.start) / total * data.length} 80`} preserveAspectRatio="none" aria-label={`${label} audio waveform`}><path style={{ transform: 'scaleY(var(--wave-height, .7))', transformOrigin: 'center', transformBox: 'view-box' }} d={d} fill="none" stroke="currentColor" strokeWidth="1"/></svg>;
+});
 function TimelineScrub({ transport, duration }: { transport: MediaTransport; duration: number }) {
   const position = usePosition(transport);
-  return <input className="timeline-scrub" type="range" min="0" max={duration || 1} step="0.01" value={position} onChange={event => transport.seek(Number(event.target.value))} aria-label="Timeline playhead"/>;
+  return <input className="timeline-scrub" type="range" min="0" max={duration || 1} step="0.01" value={position} onChange={event => transport.scrub(Number(event.target.value))} aria-label="Timeline playhead"/>;
 }
 export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness, setMatchLoudness, onLoudness, masterGain, useAsReference, exportMixFile, sourceName, takes, selectedTake, selectTake, canExportVideo, initialView, onViewChange, stems, save, exporting, independent = false, transport, playback, exportVideo, expanded, toggleExpanded, resize, resetSize, workspaceHeight, resizeBounds, details, detailBusy, detailAvailable }: Props) {
   const [tracks, setTracks] = useState<Track[]>([]), [mix, setMix] = useState<Record<string, Mix>>(() => normalizeSolo(initialView?.mix || {}));
@@ -110,7 +129,7 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
           if (disposed) return;
           const data = peaks(buffer), peak = Math.max(0.000001, ...data);
           const path = data.map((value, i) => `M${i},${40 - Math.min(1, value / peak) * 40}v${Math.min(1, value / peak) * 80}`).join(' ');
-          track = { stem, buffer, peaks: data, path };
+          track = { stem, buffer, peaks: data, path, peak };
         }
         memory += track.buffer.length * track.buffer.numberOfChannels * 4;
         if (memory > 768 * 1024 * 1024) throw Error('Preview memory limit reached. Download channels instead.');
@@ -168,7 +187,7 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
   }
   function dragSeek(event: React.PointerEvent<HTMLElement>) {
     if (!gesture.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    if (gesture.current.kind === 'select') transport.setSelection(gesture.current.anchor, point(event)); else seek(point(event));
+    if (gesture.current.kind === 'select') transport.setSelection(gesture.current.anchor, point(event)); else transport.scrub(point(event));
   }
   function endSeek(event: React.PointerEvent<HTMLElement>) {
     if (!gesture.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
@@ -222,7 +241,7 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
       {rows.map(({ stem, track, depth, color }, index) => { const { buffer, peaks: data, path } = track!; const hasChildren = stems.some(child => child.parentId === stem.id); return <div className={`timeline-track track-color-${color} ${depth ? 'is-child' : ''} ${mix[stem.id]?.mute ? 'is-muted' : ''}`} key={stem.id}>
         <div className="track-controls" style={{ paddingLeft: 10 + Math.min(depth, 4) * 12 }} onContextMenu={event => context(event, stem)}><div className="track-name">{hasChildren && <button className="group-fold" aria-label={`${collapsed.has(stem.id) ? 'Expand' : 'Collapse'} ${stem.label} details`} aria-expanded={!collapsed.has(stem.id)} onClick={() => setCollapsed(previous => { const next = new Set(previous); next.has(stem.id) ? next.delete(stem.id) : next.add(stem.id); return next; })}>{collapsed.has(stem.id) ? <ChevronRight size={12}/> : <ChevronDown size={12}/>}</button>}<span className="track-number">{String(index + 1).padStart(2, '0')}</span><strong title={stem.label}>{stem.label}</strong><button className="icon-button" disabled={exporting} onClick={() => save(stem.id)} aria-label={`Download ${stem.label}`}><ArrowDownToLine size={14}/></button></div><div className="track-mix"><button className={mix[stem.id]?.mute ? 'is-active' : ''} aria-pressed={!!mix[stem.id]?.mute} onClick={() => muteChannel(stem.id)} aria-label={`Mute ${stem.label}`} data-tip="Mute">M</button><button className={mix[stem.id]?.solo ? 'is-active' : ''} aria-pressed={!!mix[stem.id]?.solo} onClick={event => soloChannel(event, stem.id)} aria-label={`Solo ${stem.label}`} data-tip={'Solo\nMutes every other channel. Hold Ctrl to solo several.'}>S</button><input type="range" min="0" max="1" step="0.01" value={mix[stem.id]?.level ?? 1} aria-label={`${stem.label} level`} onPointerDown={() => remember()} onKeyDown={event => { if (!event.repeat && event.key.startsWith('Arrow')) remember(); }} onChange={event => setMix(values => ({ ...values, [stem.id]: { ...values[stem.id], level: Number(event.target.value) } }))}/><small>{buffer.numberOfChannels === 1 ? 'MONO' : `${buffer.numberOfChannels}CH`} · {(buffer.sampleRate / 1000).toFixed(1)}k</small></div></div>
         <div className="waveform-lane" onContextMenu={event => context(event, stem)} onPointerDown={seekPointer} onPointerMove={event => { dragSeek(event); const at=point(event); event.currentTarget.classList.toggle('over-selected',!!selection && at>=selection.start && at<=selection.end); }} onPointerLeave={event => event.currentTarget.classList.remove('over-selected')} onPointerUp={endSeek} onPointerCancel={() => { gesture.current = null; }} onLostPointerCapture={() => { gesture.current = null; }}>
-          {channelEdit(edits[stem.id], duration).clips.map(clip => <div key={clip.id} className="waveform-clip editable-clip" style={{ left: `${clip.start / duration * 100}%`, width: `${(clip.end - clip.start) / duration * 100}%` }}><span>{stem.label} · FLAC</span><svg viewBox={`${clip.start / Math.max(buffer.duration,.001) * data.length} 0 ${(clip.end-clip.start) / Math.max(buffer.duration,.001) * data.length} 80`} preserveAspectRatio="none" aria-label={`${stem.label} audio waveform`}><path style={{ transform: 'scaleY(var(--wave-height, .7))', transformOrigin: 'center', transformBox: 'view-box' }} d={path} fill="none" stroke="currentColor" strokeWidth="1"/></svg>{(['start','end'] as const).map(edge => <div key={edge} className={`clip-edge clip-edge-${edge}`} role="separator" aria-label={`Trim ${stem.label} ${edge}`} onPointerDown={event => editStart(event,stem,edge,clip.id)} onPointerMove={editMove} onPointerUp={editEnd} onPointerCancel={editEnd} onLostPointerCapture={editEnd}/>)}</div>)}
+          {channelEdit(edits[stem.id], duration).clips.map(clip => <div key={clip.id} className="waveform-clip editable-clip" style={{ left: `${clip.start / duration * 100}%`, width: `${(clip.end - clip.start) / duration * 100}%` }}><span>{stem.label} · FLAC</span><ClipWave label={stem.label} data={data} peak={track!.peak} path={path} duration={buffer.duration} clip={clip} gains={edits[stem.id]?.gains ?? NO_GAINS}/>{(['start','end'] as const).map(edge => <div key={edge} className={`clip-edge clip-edge-${edge}`} role="separator" aria-label={`Trim ${stem.label} ${edge}`} onPointerDown={event => editStart(event,stem,edge,clip.id)} onPointerMove={editMove} onPointerUp={editEnd} onPointerCancel={editEnd} onLostPointerCapture={editEnd}/>)}</div>)}
           {selection && <><div className="timeline-selection" style={rangeStyle}/><div className={`range-gain ${gainDragging ? 'is-dragging' : ''}`} style={{ ...rangeStyle, top: `${Math.max(14, Math.min(85, 50 - gainAt(edits[stem.id],(selection.start+selection.end)/2))) }%` }} title="Drag vertically to adjust selected range gain. Double-click to reset." onPointerDown={event => editStart(event,stem,'gain')} onPointerMove={editMove} onPointerUp={editEnd} onPointerCancel={editEnd} onLostPointerCapture={editEnd} onDoubleClick={event => { event.stopPropagation(); remember(); setEdits(previous => ({ ...previous, [stem.id]: gainEdit(previous[stem.id],selection.start,selection.end,0,duration) })); }}><span>{gainAt(edits[stem.id],(selection.start+selection.end)/2).toFixed(1)} dB</span></div></>}{duration > 0 && markers.map(value => <div key={value} className="marker-line" style={{ left: `${value / duration * 100}%` }}/>)}<div className="timeline-playhead" style={{ left: 'clamp(0px, calc(var(--playhead, 0) * 1%), calc(100% - 1px))' }}/>
         </div>
       </div>; })}

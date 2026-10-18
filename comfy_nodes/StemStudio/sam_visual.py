@@ -39,12 +39,15 @@ def masked_frames(video, start, duration, keyframes, destination):
                 append(chosen, moments[pending]); pending += 1
             if pending == count: break
             previous, previous_time = frame, time
+        tail = 0.0
         if pending < count and previous is not None:
             # The last frame covers its display duration even without a later PTS.
             tail = float(getattr(previous, 'duration', 0) or 0) * float(stream.time_base)
             if tail <= 0 and stream.average_rate: tail = 1 / float(stream.average_rate)
-            while pending < count and moments[pending] <= previous_time + tail + .001:
+            # Audio tracks are often a fraction of a second longer than the picture; hold the last frame for that gap.
+            while pending < count and moments[pending] <= previous_time + tail + max(0.5, 3 * tail):
                 append(previous, moments[pending]); pending += 1
         if pending != count:
-            raise ValueError('The source video does not cover the selected visual interval. Shorten the selection.')
+            ends = start + (previous_time + tail if previous_time is not None else 0)
+            raise ValueError(f'The source video ends at about {ends:.1f}s but the selection runs to {start + duration:.1f}s. Shorten the selection so it stays inside the picture.')
     np.save(destination, np.stack(output), allow_pickle=False)

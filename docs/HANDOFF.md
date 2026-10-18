@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-34 | WAITING_USER | Claude | Feedback round: range-gain waveform feedback, video scrub coalescing, proportional floating preview, single-row telemetry, SAM visual tolerance, GuideSep on another audio file (0.12.2 source). | User checks each item in `npm run dev`. |
 | W-20261017-33 | WAITING_USER | Claude | Eight suggested features: markers and section loops, batch processing, A/B take compare with loudness matching, mix export (WAV/FLAC), SAM/any channel as GuideSep reference, shortcut panel, source-based model suggestion, GuideSep reference offset (0.12.1 source, not packaged). | User tries each feature in `npm run dev`; reinstall integration and restart idle ComfyUI for the GuideSep offset. |
 | W-20261017-32 | WAITING_USER | Claude | Dead-code cleanup (install IPC, old scripts, unused CSS, browser-only source path, dev scripts, old release folders) and ComfyUI workflows of the backend in workflows/. | User opens workflows/*.json in ComfyUI and runs the first two; confirms cleanup. |
 | W-20261017-31 | WAITING_USER | Claude | One-row model tiles, compact SAM/GuideSep modal, compact Connection settings, playback/polling performance pass (source only). | User checks the new modals and playback smoothness in `npm run dev`. |
@@ -53,6 +54,16 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-34: Feedback round (range gain feedback, scrubbing, floating preview, telemetry, SAM visual, GuideSep input)
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-18T04:00:00+03:00 | Work: W-20261017-34
+  Change: Waveform regions with a gain change are drawn at their new size (ClipWave in src/StemTimeline.tsx), multiplied with the global height knob so the knob never resets regional edits. Video scrubbing: MediaTransport.scrub keeps only the newest target while a seek is in flight (previously every slider event cancelled the previous seek so no frame completed until the drag stopped); the slider uses the pending target for its position; used by the preview slider, timeline scrub bar and ruler/lane drags. Floating preview: proportional resize from every edge and corner (src/float-geometry.mjs), height follows the real video ratio, object-fit cover so no black bars, rounded corners, and positions may reach partly off screen while staying recoverable. Telemetry cards are one row at the layout-zoom height. SAM visual guidance: the source video may end up to 0.5 s (or three frames) before the audio, the last frame is held; larger gaps give a clear message with both times. GuideSep: optional "Audio to process" file replaces the loaded source as the mixture (no timeline range applies).
+  Validation: TypeScript, Vite build, 141 JS tests and 9 Python tests pass, with new tests for scrubbing, float geometry and the video gap. No app launch, so the visual results are unverified.
+  Limits: Cause of the SAM visual failure is inferred (audio longer than picture) and not reproduced on the user's file. Floating box edges cover 7 px; a take made from a different mixture is not time-aligned with the loaded video.
+  Artifacts: src/{StemTimeline,main,GuideSepPanel,PreviewFooter}.tsx, src/{media-transport,float-geometry}.mjs, src/styles.css, comfy_nodes/StemStudio/sam_visual.py, tests.
+  Next: User verifies and reports.
 
 ### W-20261017-33: Eight workspace features
 

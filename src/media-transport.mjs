@@ -10,19 +10,19 @@ export class MediaTransport {
     this.video = null; this.context = null; this.tracks = []; this.mix = {};
     this.sources = []; this.gains = new Map(); this.listeners = new Set(); this.events = [];
     this.frame = null; this.generation = 0; this.buffering = false; this.mode = 'original'; this.error = '';
-    this.anchor = null; this.master = 1; this.playPending = false; this.selection = null; this.loopLocked = false; this.wantsPlayback = false;
+    this.anchor = null; this.scrubTarget = null; this.master = 1; this.playPending = false; this.selection = null; this.loopLocked = false; this.wantsPlayback = false;
   }
   snapshot() {
     if (this.pendingRestore) return { ...this.pendingRestore, playing: false, buffering: false, mode: this.mode, error: this.error };
     const duration = Number.isFinite(this.video?.duration) ? this.video.duration : 0;
-    return { position: bounded(this.video?.currentTime || 0, duration), duration, playing: !!this.video && !this.video.paused && !this.video.ended, buffering: this.buffering, mode: this.mode, error: this.error, selection: this.selection ? { ...this.selection } : null, loopLocked: this.loopLocked };
+    return { position: bounded(this.scrubTarget ?? (this.video?.currentTime || 0), duration), duration, playing: !!this.video && !this.video.paused && !this.video.ended, buffering: this.buffering, mode: this.mode, error: this.error, selection: this.selection ? { ...this.selection } : null, loopLocked: this.loopLocked };
   }
   subscribe(callback) { this.listeners.add(callback); callback(this.snapshot()); return () => this.listeners.delete(callback); }
   emit() { const value = this.snapshot(); this.listeners.forEach(callback => callback(value)); }
   attachVideo(video) {
     if (this.video === video) return;
     this.pause(); this.events.forEach(([name, fn]) => this.video?.removeEventListener(name, fn)); this.events = [];
-    this.video = video; this.error = ''; this.buffering = false; this.selection = null; this.loopLocked = false;
+    this.video = video; this.scrubTarget = null; this.error = ''; this.buffering = false; this.selection = null; this.loopLocked = false;
     if (video) {
       const listen = (name, fn) => { video.addEventListener(name, fn); this.events.push([name, fn]); };
       listen('loadedmetadata', () => { this.applyRestore(); this.emit(); }); listen('durationchange', () => { this.applyRestore(); this.emit(); });
@@ -31,10 +31,10 @@ export class MediaTransport {
       listen('pause', () => { this.stopAudio(); this.stopLoop(); this.emit(); });
       listen('ended', () => { this.stopAudio(); this.stopLoop(); if (this.loopLocked && this.selection && this.wantsPlayback) { this.seek(this.selection.start); void this.play(); } else this.emit(); });
       listen('seeking', () => { this.stopAudio(); this.emit(); });
-      listen('seeked', () => { if (!video.paused) this.alignAudio(); this.emit(); });
+      listen('seeked', () => { if (this.scrubTarget !== null) { this.flushScrub(); return; } if (!video.paused) this.alignAudio(); this.emit(); });
       listen('waiting', () => { this.buffering = true; this.stopAudio(); this.emit(); });
       listen('ratechange', () => { if (!video.paused) this.alignAudio(); this.emit(); });
-      listen('error', () => { this.pause(); this.error = 'Video playback failed.'; this.emit(); });
+      listen('error', () => { this.scrubTarget = null; this.pause(); this.error = 'Video playback failed.'; this.emit(); });
       video.muted = this.mode === 'stems';
     }
     this.emit();
@@ -122,8 +122,24 @@ export class MediaTransport {
   }
   pause() { this.generation++; this.playPending = false; this.wantsPlayback = false; this.video?.pause(); this.stopAudio(); this.stopLoop(); this.emit(); }
   toggle() { return (this.playPending || (this.video && !this.video.paused)) ? this.pause() : this.play(); }
+  // Dragging a slider fires far more seeks than a video can decode. Only the newest target is kept while a seek is
+  // in flight, so frames keep appearing during the drag instead of only after it stops.
+  scrub(value) {
+    if (!this.video) return;
+    let position = bounded(value, this.snapshot().duration);
+    if (this.loopLocked && this.selection && (position < this.selection.start || position >= this.selection.end)) position = this.selection.start;
+    this.stopAudio(); this.scrubTarget = position;
+    if (!this.video.seeking) this.flushScrub();
+    this.emit();
+  }
+  flushScrub() {
+    if (this.scrubTarget === null || !this.video) return;
+    const target = this.scrubTarget; this.scrubTarget = null;
+    this.video.currentTime = target; this.emit();
+  }
   seek(value) {
     if (!this.video) return;
+    this.scrubTarget = null;
     let position = bounded(value, this.snapshot().duration);
     if (this.loopLocked && this.selection && (position < this.selection.start || position >= this.selection.end)) position = this.selection.start;
     this.stopAudio(); this.video.currentTime = position;

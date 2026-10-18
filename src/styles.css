@@ -261,3 +261,15 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .reference-offset span{flex:1}
 .reference-offset input{width:74px;margin:0;padding:5px 8px;background:#211927;border:1px solid rgba(255,255,255,.12);border-radius:8px;color:var(--text);font:11px Consolas,monospace;text-align:right}
 .reference-offset em{font-style:normal;color:var(--dim)}
+
+/* Floating preview: rounded, proportional, covers its box; single-row telemetry matching the layout zoom block */
+.floating-preview{border-radius:14px;box-shadow:0 12px 36px #000a,0 0 0 1px rgba(255,255,255,.08)}
+.floating-preview .preview-stage{border-radius:inherit;overflow:hidden;padding:0}
+.floating-preview .preview-stage video{object-fit:cover;width:100%;height:100%;max-height:none}
+.telemetry{align-items:center}
+.tele-card{flex-direction:row;align-items:center;gap:7px;height:34px;min-width:0;padding:0 11px}
+.tele-card small{font-size:8px}
+.tele-card strong{font-size:11.5px}
+@media (max-width:1280px){.tele-card strong i{display:none}.tele-card{padding:0 8px}}
+.studio-workspace .floating-preview .preview-stage video{object-fit:cover}
+.studio-workspace .floating-preview{border-radius:14px;overflow:hidden}

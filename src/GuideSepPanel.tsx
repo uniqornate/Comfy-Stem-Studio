@@ -14,12 +14,20 @@ export function useGuideSepStatus(profile: Profile) {
   }, [profile.installation, profile.comfyUrl, preparingPhase(state)]);
   return [state, setState] as const;
 }
-export function GuideSepPanel({ profile, engine, state, setState, reference, setReference, offset, setOffset, busy }: { offset: number; setOffset: (value: number) => void; profile: Profile; engine: { guidesep?: boolean } | null; state: SAMState | null; setState: (value: SAMState) => void; reference: ReferenceAudio | null; setReference: (value: ReferenceAudio | null) => void; busy: boolean }) {
+export function GuideSepPanel({ profile, engine, state, setState, reference, setReference, offset, setOffset, busy, mixture, setMixture, sourceName }: { mixture?: ReferenceAudio | null; setMixture?: (value: ReferenceAudio | null) => void; sourceName?: string; offset: number; setOffset: (value: number) => void; profile: Profile; engine: { guidesep?: boolean } | null; state: SAMState | null; setState: (value: SAMState) => void; reference: ReferenceAudio | null; setReference: (value: ReferenceAudio | null) => void; busy: boolean }) {
   const [consent, setConsent] = useState(false), [error, setError] = useState(''), [offsetText, setOffsetText] = useState(String(offset));
   const preparing = preparingPhase(state);
+  async function chooseMixture() { try { setError(''); const picked = await window.desktop!.chooseReference(); if (picked) setMixture?.(picked); } catch (cause) { setError(String(cause)); } }
   async function choose() { try { setError(''); const picked = await window.desktop!.chooseReference(); if (picked) setReference(picked); } catch (cause) { setError(String(cause)); } }
   async function prepare() { try { setError(''); setState(await window.desktop!.prepareGuideSep(profile)); } catch (cause) { setError(String(cause)); } }
   return <div className="guidesep-panel">
+    {setMixture && <><span className="field-label">Audio to process</span>
+    <div className="reference-row">
+      <button type="button" className="secondary-button reference-pick" disabled={busy || !window.desktop} onClick={() => void chooseMixture()} data-tip={'Audio to process\nBy default GuideSep works on the loaded source. Pick an audio file to process that instead.'}>
+        <FileAudio size={15}/><span>{mixture ? mixture.name : `Loaded source${sourceName ? ` · ${sourceName}` : ''}`}</span>
+      </button>
+      {mixture && <button type="button" className="icon-button" aria-label="Use the loaded source again" disabled={busy} onClick={() => setMixture(null)}><X size={13}/></button>}
+    </div></>}
     <span className="field-label">Reference sound</span>
     <div className="reference-row">
       <button type="button" className="secondary-button reference-pick" disabled={busy || !window.desktop} onClick={() => void choose()} data-tip={'Choose a reference\nHum, whistle or play the part you want to pull out. Its start lines up with the start of the processed region.'}>

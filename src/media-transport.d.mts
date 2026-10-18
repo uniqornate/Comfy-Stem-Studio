@@ -11,6 +11,6 @@ export class MediaTransport {
   setEdits(edits: Record<string, import('./clip-edits.mjs').ChannelEdit>): void;
   setMode(mode: 'original' | 'stems'): void;
   setSelection(from: number, to: number): void; commitSelection(): void | Promise<void>; clearSelection(): void; setLoopLocked(locked: boolean): void;
-  play(): Promise<void>; pause(): void; toggle(): void | Promise<void>; seek(value: number): void;
+  play(): Promise<void>; pause(): void; toggle(): void | Promise<void>; seek(value: number): void; scrub(value: number): void;
   dispose(): void;
 }
