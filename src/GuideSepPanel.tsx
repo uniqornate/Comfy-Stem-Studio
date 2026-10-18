@@ -14,8 +14,8 @@ export function useGuideSepStatus(profile: Profile) {
   }, [profile.installation, profile.comfyUrl, preparingPhase(state)]);
   return [state, setState] as const;
 }
-export function GuideSepPanel({ profile, engine, state, setState, reference, setReference, busy }: { profile: Profile; engine: { guidesep?: boolean } | null; state: SAMState | null; setState: (value: SAMState) => void; reference: ReferenceAudio | null; setReference: (value: ReferenceAudio | null) => void; busy: boolean }) {
-  const [consent, setConsent] = useState(false), [error, setError] = useState('');
+export function GuideSepPanel({ profile, engine, state, setState, reference, setReference, offset, setOffset, busy }: { offset: number; setOffset: (value: number) => void; profile: Profile; engine: { guidesep?: boolean } | null; state: SAMState | null; setState: (value: SAMState) => void; reference: ReferenceAudio | null; setReference: (value: ReferenceAudio | null) => void; busy: boolean }) {
+  const [consent, setConsent] = useState(false), [error, setError] = useState(''), [offsetText, setOffsetText] = useState(String(offset));
   const preparing = preparingPhase(state);
   async function choose() { try { setError(''); const picked = await window.desktop!.chooseReference(); if (picked) setReference(picked); } catch (cause) { setError(String(cause)); } }
   async function prepare() { try { setError(''); setState(await window.desktop!.prepareGuideSep(profile)); } catch (cause) { setError(String(cause)); } }
@@ -27,6 +27,7 @@ export function GuideSepPanel({ profile, engine, state, setState, reference, set
       </button>
       {reference && <button type="button" className="icon-button" aria-label="Clear reference" disabled={busy} onClick={() => setReference(null)}><X size={13}/></button>}
     </div>
+    <label className="reference-offset" data-tip={'Reference start offset\nSeconds into the processed region where your reference begins. Negative skips the first seconds of the reference.'}><span>Reference starts at</span><input type="number" step="0.1" min="-600" max="600" value={offsetText} disabled={busy} onChange={event => { setOffsetText(event.target.value); const value = Number(event.target.value); if (event.target.value.trim() !== '' && Number.isFinite(value)) setOffset(Math.max(-600, Math.min(600, value))); }} onBlur={() => setOffsetText(String(offset))}/><em>s</em></label>
     <p className="helper">Pulls the instrument that matches your reference. 16 kHz mono, so output is band-limited.</p>
     {engine && !engine.guidesep && <p className="helper">Update the integration and restart idle ComfyUI to enable GuideSep.</p>}
     {!state?.ready && <details className="sam-preparation" open><summary>Prepare GuideSep</summary>

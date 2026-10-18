@@ -7,9 +7,10 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 ## Features
 
 - Import a video or an audio file and separate dialogue, music and effects with **MERL MRX (default)**, BandIt v2 or SFC-Locoformer. Pick the model from the icon tiles; hover for its full name and license note.
-- Waveform timeline with shared video/stem transport, mute and solo (Ctrl+click to solo several), zoom, range loop, non-destructive clip trim, split and gain edits, and Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Model takes appear as tabs above the timeline: middle-drag or Ctrl+wheel to scroll them.
+- Waveform timeline with shared video/stem transport, mute and solo (Ctrl+click to solo several), zoom, range loop, non-destructive clip trim, split and gain edits, and Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Model takes appear as tabs above the timeline: middle-drag or Ctrl+wheel to scroll them. Alt+B flips between the last two takes with optional loudness matching, so the louder one does not sound better.
 - Extract named sounds with USS/PANNs (AudioSet classes, or All with Auto thresholds) and, experimentally, SAM Audio (text, time examples, visual boxes) on the whole source or on a selected channel range.
-- Experimental GuideSep separation: hum or play a reference and pull the matching instrument from music, on the whole source or on a channel range.
+- Experimental GuideSep separation: hum or play a reference and pull the matching instrument from music, on the whole source or on a channel range. Set where the reference starts, or use any extracted channel as the reference.
+- Markers (M) with section loops (double-click the ruler), export of the current mix to WAV or FLAC, batch processing of many files into one folder, a quick source check that suggests a starting model, and a `?` shortcut list.
 - Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
 
 ## Use the backend without the app

@@ -131,3 +131,15 @@ test('selection ending at EOF restarts both media streams, while explicit pause 
   transport.pause(); video.currentTime = 10; video.paused = true; video.ended = true; video.dispatchEvent(new Event('ended'));
   await new Promise(resolve => setImmediate(resolve)); assert.equal(video.paused, true); assert.equal(video.currentTime, 10); transport.dispose();
 });
+
+test('master gain scales every channel for loudness matching and is clamped', async () => {
+  const { transport, video } = fixture(); video.currentTime = 1;
+  await transport.play();
+  transport.setMaster(2);
+  assert.deepEqual([...transport.gains.values()].map(gain => gain.gain.value), [2, 1]);
+  transport.setMaster(100); assert.equal(transport.master, 4);
+  transport.setMaster(NaN); assert.equal(transport.master, 1);
+  transport.setMix({ a: { mute: true, solo: false, level: 1 }, b: { mute: false, solo: false, level: 0.5 } });
+  assert.deepEqual([...transport.gains.values()].map(gain => gain.gain.value), [0, 0.5]);
+  transport.dispose();
+});

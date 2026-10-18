@@ -16,7 +16,8 @@
         "8",
         0
       ],
-      "steps": 8
+      "steps": 8,
+      "reference_offset": 0
     }
   },
   "8": {

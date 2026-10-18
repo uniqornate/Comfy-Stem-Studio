@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AudioLines, ArrowLeft, Mic, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
+import { AudioLines, ArrowLeft, Keyboard, Layers, Lightbulb, Mic, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
 import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportState, Stem, SAMGuidance, ProjectInfo, ProjectSession, ProjectPayload, TimelineView, ReferenceAudio } from './types';
 import './styles.css';
 const comfyWordmark = new URL('./assets/comfy/comfy-wordmark.svg', import.meta.url).href;
@@ -21,6 +21,12 @@ import { SAMPrepare, SAMVariantSwitch, useSAMStatus } from './SAMPrepare';
 import { SAMGuidanceEditor } from './SAMGuidanceEditor';
 import { GuideSepPanel, useGuideSepStatus } from './GuideSepPanel';
 import { normalizeGuidance } from './sam-guidance.mjs';
+import { ShortcutsPanel } from './ShortcutsPanel';
+import { BatchModal } from './BatchModal';
+import { normalizeMarkers } from './markers.mjs';
+import { matchGainDb } from './mixdown.mjs';
+import { analyzeSource, suggestModel } from './source-profile.mjs';
+import type { BatchOptions, MixExportOptions } from './types';
 const STEM_MODELS = ['mrx', 'bandit', 'sfc'];
 const AUDIO_SOURCE = /\.(mp3|wav|flac|m4a|aac|ogg|opus)$/i;
 
@@ -88,6 +94,14 @@ function App() {
   const [modelModal, setModelModal] = useState<'sam' | 'guidesep' | null>(null);
   const [sourceGuidance, setSourceGuidance] = useState<SAMGuidance>({});
   const [reference, setReference] = useState<ReferenceAudio | null>(null);
+  const [referenceOffset, setReferenceOffset] = useState(0);
+  const [markers, setMarkers] = useState<number[]>([]);
+  const [abPrev, setAbPrev] = useState('');
+  const [loudness, setLoudness] = useState<Record<string, number>>({});
+  const [matchLoudness, setMatchLoudnessState] = useState(() => { try { return localStorage.getItem('matchLoudness') !== 'off'; } catch { return true; } });
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ model: string; text: string; detail: string } | null>(null);
   const [sam, setSAM] = useSAMStatus(profile, samVariant);
   const [guide, setGuide] = useGuideSepStatus(profile);
   const [floatPosition, setFloatPosition] = useState({ x: Math.max(8, window.innerWidth - 340), y: 90 });
@@ -108,6 +122,15 @@ function App() {
   useEffect(() => { const available = engine?.models; if (STEM_MODELS.includes(model) && available?.length && !available.includes(model)) setModel(['mrx', 'bandit', 'sfc'].find(key => available.includes(key)) || available[0]); }, [engine?.models, model]);
   useEffect(() => { try { localStorage.setItem('workspacePreferences', JSON.stringify({ model, activeOperation, target, autoThreshold, threshold })); } catch {} }, [model, activeOperation, target, autoThreshold, threshold]);
   const currentRun = runs.find(run => run.runId === selectedRun) || runs.at(-1);
+  const activeId = currentRun?.runId || '';
+  const selectedRef = useRef(''); selectedRef.current = activeId;
+  const pickRun = (id: string) => { if (id !== selectedRef.current) setAbPrev(selectedRef.current); setSelectedRun(id); setDetailRequest(null); setDetailOpen(false); };
+  const activeIndex = runs.findIndex(run => run.runId === activeId);
+  const abTarget = abPrev && abPrev !== activeId && runs.some(run => run.runId === abPrev) ? abPrev : runs.length > 1 ? (activeIndex > 0 ? runs[activeIndex - 1].runId : runs[1].runId) || '' : '';
+  const onLoudness = useCallback((id: string, db: number) => setLoudness(previous => previous[id] === db ? previous : { ...previous, [id]: db }), []);
+  const referenceDb = loudness[runs[0]?.runId || ''];
+  const masterGain = matchLoudness && activeId && Number.isFinite(referenceDb) && Number.isFinite(loudness[activeId]) ? 10 ** (matchGainDb(referenceDb, loudness[activeId]) / 20) : 1;
+  const setMatchLoudness = (value: boolean) => { setMatchLoudnessState(value); try { localStorage.setItem('matchLoudness', value ? 'on' : 'off'); } catch { /* optional */ } };
   const shownStems = currentRun?.stems || job.stems;
   const modelNames: Record<string, string> = Object.fromEntries(MODELS.map(item => [item.id, item.name]));
   const modelKind = MODELS.find(item => item.id === model)?.kind || 'stems';
@@ -121,6 +144,7 @@ function App() {
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if ((event.code === 'Space' && event.target instanceof HTMLTextAreaElement && event.target.classList.contains('sam-target-description')) || (event.target instanceof HTMLInputElement && event.target.classList.contains('project-name-input'))) return;
+      if (event.key === '?' && !event.ctrlKey && !event.altKey && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); setShortcutsOpen(open => !open); return; }
       const action = event.code === 'Space' ? 'toggle' : event.ctrlKey && event.key === 'Enter' ? 'extract' : null;
       if (!action) return;
       event.preventDefault(); event.stopImmediatePropagation();
@@ -149,6 +173,7 @@ function App() {
     const floating = value.view.floatPosition; if (floating && Number.isFinite(floating.x) && Number.isFinite(floating.y)) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - 100, floating.x)), y: Math.max(0, Math.min(window.innerHeight - 60, floating.y)) });
     if (value.view.floatSize) setFloatSize({width:Math.max(180,Math.min(window.innerWidth-16,value.view.floatSize.width)),height:Math.max(100,Math.min(window.innerHeight-70,value.view.floatSize.height))});
     setExportMode(value.view.exportMode === 'tracks' ? 'tracks' : 'mix');
+    setMarkers(normalizeMarkers(value.view.markers)); setAbPrev(''); setLoudness({});
     setProjectStatus('Saved'); setError(value.warnings.join(' '));
   }
   useEffect(() => {
@@ -159,7 +184,7 @@ function App() {
   useEffect(() => {
     if (pendingTransport.current && (!source?.url || video?.getAttribute('src') === source.url)) { transport.restore(pendingTransport.current); pendingTransport.current = null; }
   }, [project?.id, video, source?.url, transport]);
-  session.current = project ? { projectId: project.id, runs, view: { selectedRun, model, activeOperation, target, detailMode, samVariant, lastGuidance, detailRequest, layoutZoom, workspaceShare, timelineExpanded, floatPosition, floatSize, exportMode, transport: pendingTransport.current || transport.snapshot(), timelines: timelines.current } } : null;
+  session.current = project ? { projectId: project.id, runs, view: { selectedRun, model, activeOperation, target, detailMode, samVariant, lastGuidance, detailRequest, layoutZoom, workspaceShare, timelineExpanded, floatPosition, floatSize, exportMode, markers, transport: pendingTransport.current || transport.snapshot(), timelines: timelines.current } } : null;
   const rememberTimeline = useCallback((value: TimelineView) => { if (selectedRun) timelines.current[selectedRun] = value; }, [selectedRun]);
   const currentPayload = (): ProjectPayload | null => session.current ? { ...session.current, view: { ...session.current.view, transport: pendingTransport.current || transport.snapshot(), timelines: { ...timelines.current } } } : null;
   const savedTransport = useRef<ProjectPayload['view']['transport'] | null>(null);
@@ -243,6 +268,7 @@ function App() {
       setRuns(values => values.map(value => value.runId === job.rootRunId ? { ...value, stems: [...value.stems, ...job.stems.filter(stem => !value.stems.some(existing => existing.id === stem.id))] } : value));
     } else {
       setRuns(values => values.some(value => value.runId === job.runId) ? values : [...values, job].slice(-12));
+      if (selectedRef.current !== job.runId) setAbPrev(selectedRef.current);
       setSelectedRun(job.runId);
     }
   }, [job.runId]);
@@ -266,7 +292,7 @@ function App() {
         const label = sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description!.trim();
         setJob(await window.desktop.separateStems(profile, source.url, { mode: 'sam', samModel: samVariant, target: label, threshold: 0.1, range: wholeRange, sam: sourceGuidance, videoUrl: source.url }));
       } else if (modelKind === 'reference' && reference) {
-        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, range: wholeRange }));
+        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, referenceOffset, range: wholeRange }));
       } else setJob(await window.desktop.separateStems(profile, source.url, { model, mode: 'stems' }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
@@ -277,7 +303,7 @@ function App() {
     setError(''); setSaveNotice('');
     const base = { range: { start: request.start, end: request.end }, parentId: request.stem.id, rootRunId: currentRun.runId, edits: timelines.current[currentRun.runId]?.edits?.[request.stem.id] };
     try {
-      if (mode === 'guidesep') setJob(await window.desktop.separateStems(profile, request.stem.url, { ...base, mode: 'guidesep', target: chosen, referenceUrl: referenceAudio?.url }));
+      if (mode === 'guidesep') setJob(await window.desktop.separateStems(profile, request.stem.url, { ...base, mode: 'guidesep', target: chosen, referenceUrl: (referenceAudio || reference)?.url, referenceOffset }));
       else setJob(await window.desktop.separateStems(profile, request.stem.url, { ...base, mode, samModel: mode === 'sam' ? samVariant : undefined, target: chosen, threshold: 0.1, autoThreshold: mode === 'uss', ...(mode === 'sam' && guidance ? { sam: guidance, videoUrl: source?.url } : {}) }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
@@ -301,6 +327,37 @@ function App() {
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setExporting(false); }
   }
+  function chooseModel(id: string) { setModel(id); const kind = MODELS.find(item => item.id === id)?.kind; setModelModal(kind === 'prompt' ? 'sam' : kind === 'reference' ? 'guidesep' : null); }
+  function makeReference(stem: Stem) { setReference({ name: stem.label, size: stem.size, url: stem.url }); setModel('guidesep'); setModelModal('guidesep'); setSaveNotice(`"${stem.label}" is now the GuideSep reference.`); }
+  async function exportMixFile(options: MixExportOptions) {
+    if (!window.desktop) return null;
+    setError(''); setSaveNotice('');
+    const path = await window.desktop.exportMix(profile, options);
+    if (path) setSaveNotice(`Mix saved to ${path}`);
+    return path;
+  }
+  const batchOptions: BatchOptions | null = modelKind === 'stems' ? { mode: 'stems', model } : modelKind === 'prompt' ? (sourceGuidance.description?.trim() ? { mode: 'sam', samModel: samVariant, target: sourceGuidance.description.trim() } : null) : reference ? { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, referenceOffset } : null;
+  const batchBlocked = !connected ? 'Check the ComfyUI connection first' : !engine?.ready ? 'The audio engine is not ready' : modelKind === 'stems' ? (engine.models?.includes(model) ? '' : 'This model is not installed') : modelKind === 'prompt' ? (!samReady ? 'Prepare SAM Audio first' : !sourceGuidance.description?.trim() ? 'Describe the sound in the SAM options first' : '') : (!guideReady ? 'Prepare GuideSep and choose a reference first' : '');
+  const batchLabel = modelKind === 'stems' ? modelName(model) || model : modelKind === 'prompt' ? `SAM Audio · ${sourceGuidance.description?.trim() || 'no description yet'}` : `GuideSep · ${reference?.name || 'no reference yet'}`;
+  useEffect(() => {
+    setSuggestion(null);
+    if (!source || source.missing || !window.desktop || source.size > 80 * 1048576) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const bytes = await (await fetch(source.url)).arrayBuffer();
+        const ctx = new AudioContext({ sampleRate: 16000 });
+        try {
+          const buffer = await ctx.decodeAudioData(bytes);
+          if (cancelled) return;
+          const mono = new Float32Array(buffer.length);
+          for (let channel = 0; channel < buffer.numberOfChannels; channel++) { const data = buffer.getChannelData(channel); for (let i = 0; i < data.length; i++) mono[i] += data[i] / buffer.numberOfChannels; }
+          setSuggestion(suggestModel(analyzeSource(mono, buffer.sampleRate)));
+        } finally { void ctx.close(); }
+      } catch { /* the suggestion is optional */ }
+    }, 800);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [source?.url]);
   async function prepareProxy() {
     if (!window.desktop) return;
     setPreparingProxy(true); setBusy(true); setError(''); setConnection(null);
@@ -344,7 +401,7 @@ function App() {
   }
   return <div className="app-shell studio-workspace">
     <TooltipLayer/>
-    <header className="topbar"><div className="brand"><img className="primary-comfy-logo" src={comfyWordmark} alt="Comfy"/><span className="stem-wordmark">Stem Studio</span></div><button className="project-switch" onClick={() => void showProjects()} title={project?.path || "Projects"} disabled={!project || projectBusy}><FolderOpen size={14}/><span>{project?.name || "Project"}</span><small>{projectStatus}</small></button><ResourceMonitor profile={profile}/><div className="topbar-right"><div className="layout-zoom" aria-label="Layout scale"><button className="icon-button" aria-label="Zoom layout out" disabled={layoutZoom <= 0.6} onClick={() => setLayoutZoom(value => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))}><ZoomOut size={15}/></button><button className="zoom-reset" title="Reset layout scale" onClick={() => setLayoutZoom(1)}>{Math.round(layoutZoom * 100)}%</button><button className="icon-button" aria-label="Zoom layout in" disabled={layoutZoom >= 1.5} onClick={() => setLayoutZoom(value => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))}><ZoomIn size={15}/></button></div><button className={`connection-pill ${connected ? 'online' : ''}`} onClick={() => setSettings(true)} title="Connection settings" aria-label="Connection settings"><span className="status-dot"/><Settings2 size={16}/></button></div></header>
+    <header className="topbar"><div className="brand"><img className="primary-comfy-logo" src={comfyWordmark} alt="Comfy"/><span className="stem-wordmark">Stem Studio</span></div><button className="project-switch" onClick={() => void showProjects()} title={project?.path || "Projects"} disabled={!project || projectBusy}><FolderOpen size={14}/><span>{project?.name || "Project"}</span><small>{projectStatus}</small></button><ResourceMonitor profile={profile}/><div className="topbar-right"><button className="icon-button" aria-label="Keyboard shortcuts" data-tip={'Shortcuts\n?'} onClick={() => setShortcutsOpen(true)}><Keyboard size={15}/></button><div className="layout-zoom" aria-label="Layout scale"><button className="icon-button" aria-label="Zoom layout out" disabled={layoutZoom <= 0.6} onClick={() => setLayoutZoom(value => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))}><ZoomOut size={15}/></button><button className="zoom-reset" title="Reset layout scale" onClick={() => setLayoutZoom(1)}>{Math.round(layoutZoom * 100)}%</button><button className="icon-button" aria-label="Zoom layout in" disabled={layoutZoom >= 1.5} onClick={() => setLayoutZoom(value => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))}><ZoomIn size={15}/></button></div><button className={`connection-pill ${connected ? 'online' : ''}`} onClick={() => setSettings(true)} title="Connection settings" aria-label="Connection settings"><span className="status-dot"/><Settings2 size={16}/></button></div></header>
     <main ref={workspaceMain} className={`workspace-main ${timelineExpanded ? 'timeline-expanded' : ''}`} style={{ '--workspace-height': `${topHeight}px` } as React.CSSProperties}>
       <div className="workspace-grid">
         <aside className="panel controls-panel">
@@ -354,10 +411,12 @@ function App() {
             <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={20}/></span><span className="source-description"><strong>{source ? source.name : 'Add video or audio'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB · Original source` : 'MP4, MOV, MKV, MP3, WAV, FLAC and more'}</small></span><Plus size={16}/></button>
             <div className={`operation-section ${activeOperation === 'stems' ? 'is-selected' : ''}`} onFocusCapture={() => setActiveOperation('stems')} onPointerDownCapture={() => setActiveOperation('stems')}>
             <div className="section-title"><span className="section-label">STEM SEPARATION</span><span className="subtle">{MODELS.length} MODELS</span></div>
-            <ModelPicker value={model} onChange={id => { setModel(id); const kind = MODELS.find(item => item.id === id)?.kind; setModelModal(kind === 'prompt' ? 'sam' : kind === 'reference' ? 'guidesep' : null); }} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, guidesep: engine ? !!engine.guidesep : undefined }}/>
+            <ModelPicker value={model} onChange={chooseModel} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, guidesep: engine ? !!engine.guidesep : undefined }}/>
             <p className="model-caption">{modelName(model)}</p>
+            {suggestion && suggestion.model !== model && modelKind === 'stems' && <button className="model-suggestion" onClick={() => chooseModel(suggestion.model)} data-tip={`${suggestion.text}\n${suggestion.detail}`}><Lightbulb size={12}/><span>{suggestion.text} · try {MODELS.find(item => item.id === suggestion.model)?.short}</span></button>}
             {modelKind !== 'stems' && <button className="model-summary" disabled={jobBusy} onClick={() => setModelModal(modelKind === 'prompt' ? 'sam' : 'guidesep')} data-tip="Open options"><span>{modelKind === 'prompt' ? `${samVariant === 'small-tv' ? 'Small' : 'Large'} · ${sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description?.trim() || 'Describe the sound'}` : reference?.name || 'Choose a reference sound'}</span><SlidersHorizontal size={13}/></button>}
             <button className="primary-button" disabled={modelKind !== 'stems' && !modelReady ? jobBusy : !canSeparate} onClick={() => { if (modelKind !== 'stems' && !modelReady) setModelModal(modelKind === 'prompt' ? 'sam' : 'guidesep'); else void separate(); }} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : modelKind !== 'stems' && !modelReady ? `Set up ${modelKind === 'prompt' ? 'SAM' : 'GuideSep'}` : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
+            <button className="quiet-button batch-link" disabled={jobBusy || !window.desktop} onClick={() => setBatchOpen(true)} data-tip={'Batch\nRun the selected model on many files, one after another.'}><Layers size={12}/> Batch files…</button>
             {(jobBusy || job.phase === 'failed' || job.phase === 'cancelled') && <p className="helper" role="status">{job.message}</p>}
             {job.canCancel && <button className="quiet-button" onClick={() => window.desktop?.cancelSeparation().then(setJob).catch(cause => setError(String(cause)))}>Cancel separation</button>}
             </div>
@@ -369,20 +428,22 @@ function App() {
           onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - event.currentTarget.offsetWidth, drag.left + dx)), y: Math.max(0, Math.min(window.innerHeight - event.currentTarget.offsetHeight, drag.top + dy)) }); }}
           onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloat} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
       </div>
-      <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={id => { setSelectedRun(id); setDetailRequest(null); setDetailOpen(false); }} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
+      <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} onAB={() => { if (abTarget) pickRun(abTarget); }} abReady={!!abTarget} matchLoudness={matchLoudness} setMatchLoudness={setMatchLoudness} onLoudness={onLoudness} masterGain={masterGain} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
       {saveNotice && !settings && <p className="save-notice" role="status"><Check size={14}/>{saveNotice}</p>}
       {error && !settings && <p className="error-banner" role="alert">{error}</p>}
     </main>
-    {detailOpen && detailRequest && <DetailPicker variant={samVariant} setVariant={setSAMVariant} sourceUrl={source?.url || ''} submitShortcut={detailShortcut} request={detailRequest} profile={profile} engine={engine} busy={jobBusy} close={() => setDetailOpen(false)} extract={(mode, target, guidance, referenceAudio) => void extractDetail(detailRequest, mode, target, guidance, referenceAudio)}/>}
+    {detailOpen && detailRequest && <DetailPicker reference={reference} setReference={setReference} referenceOffset={referenceOffset} setReferenceOffset={setReferenceOffset} variant={samVariant} setVariant={setSAMVariant} sourceUrl={source?.url || ''} submitShortcut={detailShortcut} request={detailRequest} profile={profile} engine={engine} busy={jobBusy} close={() => setDetailOpen(false)} extract={(mode, target, guidance, referenceAudio) => void extractDetail(detailRequest, mode, target, guidance, referenceAudio)}/>}
     {modelModal === 'sam' && <ModelModal icon={<Sparkles size={15}/>} title="SAM Audio" close={() => setModelModal(null)} note={!source ? 'Open a source first' : sourceGuidanceError || (samReady ? 'Pulls the sound from the whole source' : 'Prepare SAM Audio first')} runLabel="Extract sound" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
       <SAMVariantSwitch variant={samVariant} setVariant={setSAMVariant} disabled={jobBusy} largeAvailable={!!engine?.samModels} reset={() => setSAM(null)}/>
       {playback.duration > 0 ? <SAMGuidanceEditor key={`${source?.url}:${playback.duration}`} range={wholeRange} sourceUrl={source?.url || ''} value={sourceGuidance} change={setSourceGuidance} supported={!!engine?.samPrompts} visualSupported={!!engine?.samVisual && !sourceIsAudio}/> : <p className="helper">Open a source to describe the sound you want.</p>}
       <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={samVariant} busy={jobBusy}/>
     </ModelModal>}
     {modelModal === 'guidesep' && <ModelModal icon={<Mic size={15}/>} title="GuideSep" close={() => setModelModal(null)} note={!source ? 'Open a source first' : !reference ? 'Choose a reference sound' : guideReady ? 'Pulls the matching instrument' : 'Prepare GuideSep first'} runLabel="Separate" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
-      <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} busy={jobBusy}/>
+      <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} offset={referenceOffset} setOffset={setReferenceOffset} busy={jobBusy}/>
     </ModelModal>}
+    {shortcutsOpen && <ShortcutsPanel close={() => setShortcutsOpen(false)}/>}
+    {batchOpen && <BatchModal profile={profile} options={batchOptions} label={batchLabel} blocked={batchBlocked} close={() => setBatchOpen(false)}/>}
     {projectsOpen && <div className="modal-backdrop"><section className="connection-modal projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-title">
       <div className="modal-top"><span className="eyebrow"><FolderOpen size={14}/> PROJECTS</span><button className="icon-button" disabled={projectBusy} onClick={() => setProjectsOpen(false)} aria-label="Close projects"><X size={17}/></button></div>
       <h2 id="projects-title">Your workspace.</h2>

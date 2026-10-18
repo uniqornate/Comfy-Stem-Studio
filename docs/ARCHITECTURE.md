@@ -139,3 +139,11 @@ MediaTransport owns normalized source-time selection and loopLocked. Snapshots i
 - Timeline edits (clips, gain, mix) have an undo/redo history per take (src/history.mjs). Solo is materialised into mute flags (src/solo.mjs) so the mixer always shows what is audible.
 - Themed tooltips: src/Tooltip.tsx converts native title attributes into data-tip tooltips at runtime.
 - Developer loop: `npm run dev` runs scripts/dev.mjs (Vite HMR, Electron restart on electron/ edits, comfy_nodes sync into the installed ComfyUI).
+
+## 0.12.1 additions
+
+- Timeline tools are pure modules with tests: src/markers.mjs (markers and loop regions), src/mixdown.mjs (mix plan, WAV encoder, RMS loudness), src/source-profile.mjs (heuristic source check, tested on synthetic signals from scripts/synth-signals.mjs).
+- Mix export renders offline in the renderer (OfflineAudioContext following the same clip and gain segments as playback); WAV is written directly, FLAC is produced by ComfyUI SaveAudio from a 24-bit render (electron/mix-export.mjs).
+- Batch (electron/batch.mjs) uses its own Separation instance and an output folder chosen in a native dialog and remembered in the main process, so the renderer never supplies a path to write to.
+- A/B compare keeps the previous take id; loudness is measured per take from root channels after decode and applied as a transport master gain relative to the first take.
+- GuideSep node gained an optional reference_offset input (seconds, negative skips the start of the reference).

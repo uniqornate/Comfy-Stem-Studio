@@ -24,7 +24,7 @@ function baseWorkflow(options = {}) {
   if (options.mode === 'guidesep') return {
     '1': { class_type: 'LoadAudio', inputs: { audio: '' } },
     '8': { class_type: 'LoadAudio', inputs: { audio: '' } },
-    '2': { class_type: 'StemStudioGuideSep', inputs: { audio: ['1', 0], reference: ['8', 0], steps: 8 } },
+    '2': { class_type: 'StemStudioGuideSep', inputs: { audio: ['1', 0], reference: ['8', 0], steps: 8, reference_offset: Number(options.referenceOffset) || 0 } },
     '10': { class_type: 'SaveAudio', inputs: { audio: ['2', 0], filename_prefix: 'StemStudio/guidesep-target' } },
     '11': { class_type: 'SaveAudio', inputs: { audio: ['2', 1], filename_prefix: 'StemStudio/guidesep-remainder' } },
   };
@@ -158,6 +158,7 @@ export class Separation {
     if (options.mode === 'sam' && (!status.sam || typeof options.target !== 'string' || !options.target.trim() || options.target.length > 200)) throw new Error('SAM integration or target is unavailable. Update integration and prepare SAM Audio.');
     if (options.range && !status.detailRange) throw new Error('Range extraction needs the updated integration. Retry setup and restart idle ComfyUI.');
     if (!['uss', 'sam', 'guidesep'].includes(options.mode) && status.models && !status.models.includes(options.model || 'mrx')) throw new Error('This model is not installed. Select it in setup and restart ComfyUI.');
+    if (options.mode === 'guidesep' && options.referenceOffset !== undefined && (!Number.isFinite(options.referenceOffset) || Math.abs(options.referenceOffset) > 600)) throw new Error('Reference offset must be within 10 minutes.');
     if (options.mode === 'guidesep' && (!status.guidesep || !options.referencePath || typeof options.target !== 'string' || !options.target.trim())) throw new Error('GuideSep integration or reference sound is unavailable. Update the integration, prepare GuideSep and choose a reference.');
     if (options.samModel && !['small-tv','large-tv'].includes(options.samModel)) throw Error('Unsupported SAM model.');
     if (options.samModel === 'large-tv' && !status.samModels) throw Error('Update integration and restart idle ComfyUI to choose SAM Large.');

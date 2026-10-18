@@ -25,6 +25,12 @@ def main(folder):
         raise ValueError('Input audio contains invalid sample values.')
     mixture16 = AF.resample(mixture, rate, SAMPLE_RATE) if rate != SAMPLE_RATE else mixture
     reference16 = AF.resample(reference, reference_rate, SAMPLE_RATE) if reference_rate != SAMPLE_RATE else reference
+    # A positive offset delays the reference (it starts that many seconds into the mixture); a negative one skips its first seconds.
+    shift = int(round(float(request.get('reference_offset', 0.0)) * SAMPLE_RATE))
+    if shift > 0:
+        reference16 = torch.nn.functional.pad(reference16, (shift, 0))
+    elif shift < 0:
+        reference16 = reference16[-shift:] if -shift < reference16.shape[-1] else torch.zeros(1)
     weights = torch.load(request['weights'], map_location='cpu', weights_only=True)
     model = load_model(weights, steps=int(request.get('steps', 8)), device=request.get('device', 'cuda:0'))
     torch.manual_seed(int(request.get('seed', 12345)))

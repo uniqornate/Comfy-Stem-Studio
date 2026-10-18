@@ -1,5 +1,5 @@
 {
-  "id": "5021735a-3976-4672-9674-23d4dee3a1dc",
+  "id": "38fe82d5-82fa-2477-c832-1b43e91e224d",
   "revision": 0,
   "last_node_id": 6,
   "last_link_id": 4,
@@ -22,7 +22,7 @@
       "outputs": [],
       "properties": {},
       "widgets_values": [
-        "Requires the Stem Studio integration in ComfyUI/custom_nodes/StemStudio (installed by the Stem Studio setup) and the model files it prepared. Put your file in ComfyUI/input and pick it in Load Audio (video files work too). Outputs are FLAC files in ComfyUI/output/StemStudio.\n\nExperimental. Needs GuideSep prepared once from the Stem Studio app. Load the music on top and a reference below: hum, whistle or play the part you want. The reference start lines up with the mixture start. Output is 16 kHz mono resampled to the source rate."
+        "Requires the Stem Studio integration in ComfyUI/custom_nodes/StemStudio (installed by the Stem Studio setup) and the model files it prepared. Put your file in ComfyUI/input and pick it in Load Audio (video files work too). Outputs are FLAC files in ComfyUI/output/StemStudio.\n\nExperimental. Needs GuideSep prepared once from the Stem Studio app. Load the music on top and a reference below: hum, whistle or play the part you want. The reference start lines up with the mixture start; use reference_offset (seconds) to delay it or, if negative, skip its first seconds. Output is 16 kHz mono resampled to the source rate."
       ]
     },
     {
@@ -177,6 +177,14 @@
             "name": "steps"
           },
           "link": null
+        },
+        {
+          "name": "reference_offset",
+          "type": "FLOAT",
+          "widget": {
+            "name": "reference_offset"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -201,7 +209,8 @@
         "Node name for S&R": "StemStudioGuideSep"
       },
       "widgets_values": [
-        8
+        8,
+        0
       ]
     },
     {

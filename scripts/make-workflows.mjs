@@ -3,6 +3,7 @@
 //  - workflows/api/*.json  API format, exactly what Stem Studio submits (built from electron/separation.mjs)
 // Run: node scripts/make-workflows.mjs
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stemWorkflow } from '../electron/separation.mjs';
@@ -18,10 +19,11 @@ const defs = {
   StemStudioSeparate: { inputs: [L('audio', 'AUDIO'), W('segment_seconds', 'INT'), W('model', 'COMBO')], outputs: [['dialogue', 'AUDIO'], ['music', 'AUDIO'], ['effects', 'AUDIO']], size: [320, 120] },
   StemStudioExtract: { inputs: [L('audio', 'AUDIO'), W('target', 'COMBO'), W('threshold', 'FLOAT'), W('auto_threshold', 'BOOLEAN')], outputs: [['target_sound', 'AUDIO'], ['remainder', 'AUDIO']], size: [320, 150] },
   StemStudioSAM: { inputs: [L('audio', 'AUDIO'), W('description', 'STRING'), W('model_variant', 'COMBO'), W('guidance_json', 'STRING'), L('video', 'VIDEO'), W('video_start', 'FLOAT')], outputs: [['target', 'AUDIO'], ['remainder', 'AUDIO']], size: [340, 220] },
-  StemStudioGuideSep: { inputs: [L('audio', 'AUDIO'), L('reference', 'AUDIO'), W('steps', 'INT')], outputs: [['target', 'AUDIO'], ['remainder', 'AUDIO']], size: [320, 110] },
+  StemStudioGuideSep: { inputs: [L('audio', 'AUDIO'), L('reference', 'AUDIO'), W('steps', 'INT'), W('reference_offset', 'FLOAT')], outputs: [['target', 'AUDIO'], ['remainder', 'AUDIO']], size: [320, 110] },
   Note: { inputs: [], outputs: [], size: [420, 200] },
 };
 
+const stableId = title => { const hex = createHash('sha1').update(`stem-studio:${title}`).digest('hex'); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`; };
 function build(title, notes, spec) {
   const nodes = [], links = [];
   let nodeId = 0, linkId = 0;
@@ -48,7 +50,7 @@ function build(title, notes, spec) {
     targetInput.link = id;
   }
   return {
-    id: crypto.randomUUID(), revision: 0, last_node_id: nodeId, last_link_id: linkId, nodes, links, groups: [],
+    id: stableId(title), revision: 0, last_node_id: nodeId, last_link_id: linkId, nodes, links, groups: [],
     config: {}, extra: { ds: { scale: 0.8, offset: [40, 40] }, workflowTitle: title, notes }, version: 0.4,
   };
 }
@@ -101,10 +103,10 @@ const workflows = {
     title: 'Guide separation with a reference (GuideSep)',
     ui: build('Guide separation with a reference (GuideSep)', setup, {
       nodes: [
-        note(`${setup}\n\nExperimental. Needs GuideSep prepared once from the Stem Studio app. Load the music on top and a reference below: hum, whistle or play the part you want. The reference start lines up with the mixture start. Output is 16 kHz mono resampled to the source rate.`),
+        note(`${setup}\n\nExperimental. Needs GuideSep prepared once from the Stem Studio app. Load the music on top and a reference below: hum, whistle or play the part you want. The reference start lines up with the mixture start; use reference_offset (seconds) to delay it or, if negative, skip its first seconds. Output is 16 kHz mono resampled to the source rate.`),
         { ...load, key: 'load', title: 'Music mixture' },
         { key: 'reference', type: 'LoadAudio', pos: [20, 260], widgets: ['your-reference-hum.wav', null, null], title: 'Reference sound' },
-        { key: 'guide', type: 'StemStudioGuideSep', pos: [400, 120], widgets: [8] },
+        { key: 'guide', type: 'StemStudioGuideSep', pos: [400, 120], widgets: [8, 0] },
         save('target', [800, 60], 'StemStudio/guidesep-target'), save('remainder', [800, 220], 'StemStudio/guidesep-remainder'),
       ],
       links: [['load', 0, 'guide', 'audio'], ['reference', 0, 'guide', 'reference'], ['guide', 0, 'target', 'audio'], ['guide', 1, 'remainder', 'audio']],

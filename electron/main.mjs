@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron';
-import { readFile, writeFile, mkdir, stat, copyFile, realpath } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, copyFile, realpath, rm } from 'node:fs/promises';
 import { dirname, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -8,6 +8,8 @@ import { checkConnection, normalizeEndpoint } from './connection.mjs';
 import { AudioRenderer } from './audio-render.mjs';
 import { SAMManager } from './sam-manager.mjs';
 import { GuideSepManager } from './guidesep-manager.mjs';
+import { BatchRunner, safeName } from './batch.mjs';
+import { MixExporter, writeWav } from './mix-export.mjs';
 import { audioFilters, isAudioPath, isSourcePath, sourceFilters } from './media-types.mjs';
 import { Projects } from './projects.mjs';
 import { resources } from './resources.mjs';
@@ -22,7 +24,7 @@ const defaults = { comfyUrl: 'http://127.0.0.1:8188', proxyUrl: 'http://127.0.0.
 let window;
 let proxyManager;
 let separation;
-let samManager, guidesepManager;
+let samManager, guidesepManager, batchFolder = '';
 let audioRenderer;
 const videoExporter = new VideoExporter();
 protocol.registerSchemesAsPrivileged([{ scheme: 'app-media', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
@@ -47,6 +49,9 @@ app.whenReady().then(async () => {
   proxyManager = new ProxyManager(join(app.getPath('userData'), 'managed-proxy'));
   const expose = path => { const token = randomUUID(); sources.set(token, path); return `app-media://source/${token}`; };
   separation = new Separation(join(app.getPath('userData'), 'stem-cache'), expose);
+  const batchSeparation = new Separation(join(app.getPath('userData'), 'batch-cache'), expose);
+  const batch = new BatchRunner(batchSeparation);
+  const mixExporter = new MixExporter();
   audioRenderer = new AudioRenderer(join(app.getPath('userData'), 'edited-audio'));
   const projects = new Projects(app.getPath('userData'), separation, sources, expose);
   const assertExportTarget = async target => {
@@ -104,7 +109,7 @@ app.whenReady().then(async () => {
     const path = selection.filePaths[0];
     if (!isAudioPath(path)) throw new Error('Choose a supported audio file.');
     const info = await stat(path);
-    return { name: path.split(/[\/]/).pop(), size: info.size, url: expose(path) };
+    return { name: path.split(/[\\/]/).pop(), size: info.size, url: expose(path) };
   });
   handle('resources:get', profile => resources(sanitize(profile)));
   handle('layout:zoom', factor => {
@@ -128,8 +133,62 @@ app.whenReady().then(async () => {
     return videoExporter.run(sanitize(profile), source, stems, options, choice.filePath);
   });
   handle('engine:check', profile => engineStatus(sanitize(profile)));
+  const resolveSource = value => { try { const url = new URL(value); return url.protocol === 'app-media:' && url.hostname === 'source' ? sources.get(url.pathname.slice(1)) : undefined; } catch { return undefined; } };
+  handle('batch:choose-files', async () => {
+    if (batch.active) throw Error('A batch is already running.');
+    const selection = await dialog.showOpenDialog(window, { title: 'Choose files for the batch', properties: ['openFile', 'multiSelections'], filters: sourceFilters });
+    if (selection.canceled) return [];
+    const files = [];
+    for (const path of selection.filePaths.slice(0, 200)) { if (!isSourcePath(path)) continue; files.push({ name: path.split(/[\\/]/).pop(), size: (await stat(path)).size, url: expose(path) }); }
+    return files;
+  });
+  handle('batch:choose-folder', async () => {
+    if (batch.active) throw Error('A batch is already running.');
+    const selection = await dialog.showOpenDialog(window, { title: 'Choose the batch output folder', properties: ['openDirectory', 'createDirectory'] });
+    if (selection.canceled) return null;
+    batchFolder = selection.filePaths[0]; return batchFolder;
+  });
+  handle('batch:start', async (profile, urls, options) => {
+    await ensureProject();
+    if (separation.active || videoExporter.active || audioRenderer.active || mixExporter.active) throw Error('Finish the current job before starting a batch.');
+    if (samManager.active || guidesepManager.active) throw Error('Wait for model preparation to finish first.');
+    if (!options || typeof options !== 'object' || !['stems', 'sam', 'guidesep'].includes(options.mode)) throw Error('Choose a model for the batch.');
+    if (!Array.isArray(urls)) throw Error('Choose files first.');
+    const files = urls.map(item => ({ name: String(item?.name || 'file'), path: resolveSource(item?.url) }));
+    if (files.some(file => !file.path)) throw Error('One of the chosen files is no longer available. Choose the files again.');
+    let job, tag;
+    if (options.mode === 'stems') { if (!['mrx', 'bandit', 'sfc'].includes(options.model)) throw Error('Unknown model.'); job = () => ({ mode: 'stems', model: options.model }); tag = options.model; }
+    else if (options.mode === 'sam') {
+      const target = typeof options.target === 'string' ? options.target.trim() : '';
+      if (!target || target.length > 200) throw Error('Describe the sound for SAM Audio first.');
+      if (!['small-tv', 'large-tv'].includes(options.samModel)) throw Error('Unsupported SAM model.');
+      job = () => ({ mode: 'sam', samModel: options.samModel, target }); tag = `SAM ${target.slice(0, 30)}`;
+    } else {
+      const referencePath = resolveSource(options.referenceUrl);
+      if (!referencePath) throw Error('Choose a reference sound for GuideSep first.');
+      const offset = Number(options.referenceOffset) || 0;
+      job = () => ({ mode: 'guidesep', target: safeName(String(options.target || 'reference')), referencePath, referenceOffset: offset }); tag = 'GuideSep';
+    }
+    return batch.start(sanitize(profile), files, batchFolder, job, tag);
+  });
+  handle('batch:status', () => batch.snapshot());
+  handle('batch:cancel', () => { batch.cancel(); return batch.snapshot(); });
+  handle('mix:export', async (profile, options) => {
+    if (!options || !['wav', 'flac'].includes(options.format) || !(options.bytes instanceof Uint8Array || options.bytes instanceof ArrayBuffer) || !options.bytes.byteLength) throw Error('Nothing to export.');
+    if (mixExporter.active || videoExporter.active || audioRenderer.active) throw Error('Another export is already running.');
+    const bytes = options.bytes instanceof Uint8Array ? options.bytes : new Uint8Array(options.bytes);
+    const choice = await dialog.showSaveDialog(window, { title: 'Export the mix', defaultPath: `${safeName(options.name, 'mix')}-mix.${options.format}`, filters: [{ name: options.format === 'wav' ? 'WAV audio' : 'FLAC lossless audio', extensions: [options.format] }] });
+    if (choice.canceled) return null;
+    await assertExportTarget(choice.filePath);
+    if (options.format === 'wav') return writeWav(bytes, choice.filePath);
+    const temporary = join(app.getPath('userData'), 'mix-export'); await mkdir(temporary, { recursive: true });
+    const wav = join(temporary, `${randomUUID()}.wav`);
+    try { await writeFile(wav, bytes); return await mixExporter.toFlac(sanitize(profile), wav, choice.filePath); } finally { await rm(wav, { force: true }); }
+  });
+  handle('mix:cancel', () => mixExporter.cancel());
   handle('stems:start', async (profile, sourceUrl, options) => {
     await ensureProject();
+    if (batch.active) throw Error('A batch is running. Wait for it to finish or cancel it first.');
     let source;
     try { const url = new URL(sourceUrl); if (url.protocol === 'app-media:' && url.hostname === 'source') source = sources.get(url.pathname.slice(1)); } catch { }
     if (!source) throw new Error('Choose a local source video first.');

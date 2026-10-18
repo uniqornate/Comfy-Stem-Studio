@@ -36,9 +36,10 @@ function validate(doc) {
 function view(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid project workspace.');
   const result = {};
-  for (const key of ['selectedRun', 'model', 'activeOperation', 'target', 'detailMode', 'samVariant', 'lastGuidance', 'detailRequest', 'layoutZoom', 'workspaceShare', 'timelineExpanded', 'floatPosition', 'floatSize', 'exportMode', 'transport', 'timelines']) if (value[key] !== undefined) result[key] = value[key];
+  for (const key of ['selectedRun', 'model', 'activeOperation', 'target', 'detailMode', 'samVariant', 'lastGuidance', 'detailRequest', 'layoutZoom', 'workspaceShare', 'timelineExpanded', 'floatPosition', 'floatSize', 'exportMode', 'transport', 'timelines', 'markers']) if (value[key] !== undefined) result[key] = value[key];
   if (JSON.stringify(result).length > 2 * 1024 * 1024) throw Error('Workspace settings are too large.');
   for (const key of ['selectedRun', 'model', 'activeOperation', 'target', 'detailMode', 'exportMode']) if (result[key] !== undefined && typeof result[key] !== 'string') throw Error('Invalid workspace selection.');
+  if (result.markers !== undefined && (!Array.isArray(result.markers) || result.markers.length > 256 || !result.markers.every(value => Number.isFinite(value) && value >= 0))) throw Error('Invalid timeline markers.');
   for (const key of ['layoutZoom', 'workspaceShare']) if (result[key] !== undefined && !Number.isFinite(result[key])) throw Error('Invalid workspace scale.');
   if (result.transport) {
     const t = result.transport;

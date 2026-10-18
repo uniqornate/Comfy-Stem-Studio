@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-33 | WAITING_USER | Claude | Eight suggested features: markers and section loops, batch processing, A/B take compare with loudness matching, mix export (WAV/FLAC), SAM/any channel as GuideSep reference, shortcut panel, source-based model suggestion, GuideSep reference offset (0.12.1 source, not packaged). | User tries each feature in `npm run dev`; reinstall integration and restart idle ComfyUI for the GuideSep offset. |
 | W-20261017-32 | WAITING_USER | Claude | Dead-code cleanup (install IPC, old scripts, unused CSS, browser-only source path, dev scripts, old release folders) and ComfyUI workflows of the backend in workflows/. | User opens workflows/*.json in ComfyUI and runs the first two; confirms cleanup. |
 | W-20261017-31 | WAITING_USER | Claude | One-row model tiles, compact SAM/GuideSep modal, compact Connection settings, playback/polling performance pass (source only). | User checks the new modals and playback smoothness in `npm run dev`. |
 | W-20261017-30 | WAITING_USER | Claude | Undo/redo, solo-as-mute (Ctrl multi-solo), model tiles with SAM/GuideSep on whole source, audio import, themed tooltips, telemetry cards, take tabs in timeline toolbar, SAM draw-box fix, GuideSep adapter, `npm run dev` loop (0.12.0 source, not packaged). | User runs `npm run dev` with the installed app closed and checks the new UI; prepares GuideSep (about 1 GB) and tries a short reference separation. |
@@ -52,6 +53,16 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-33: Eight workspace features
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-18T02:30:00+03:00 | Work: W-20261017-33
+  Change: Markers (M, ruler flags, , and . to jump, double-click the ruler to loop a section, persisted in the project view); batch processing (electron/batch.mjs, dedicated Separation instance, output folder held in the main process, one folder per file named after file and model; supports stems models, SAM text, GuideSep); A/B take compare (Alt+B, transport master gain, per-take RMS loudness matching relative to the first take, toggle persisted); mix export to WAV 16/24/32f or FLAC (offline render in the renderer, FLAC through ComfyUI SaveAudio); channel context menu entry to use any channel as the GuideSep reference; shortcut panel (? key and top bar button); heuristic source check that suggests a starting model (src/source-profile.mjs); GuideSep reference offset (optional node input, worker shift, UI field). Also fixed: the reference name showed the full Windows path because the file name split ignored backslashes.
+  Validation: TypeScript, Vite build, 135 JS tests and Python tests pass. New tests cover markers, mix plan, WAV encoder, loudness, source profiler on synthetic signals, batch runner and mix exporter with fakes, transport master gain, and regenerated workflows. No app launch, no ComfyUI job, no real audio.
+  Limits: The source profiler is a heuristic checked only on synthetic signals; it decodes sources up to 80 MB. Loudness matching measures a take after it has been opened once. Mix export is mono and clamps only downward. Batch does not support SAM time or visual guidance. The separate node-pack branch (claude/blissful-brahmagupta-4cab25) touches the same files and will need conflict resolution when merged.
+  Artifacts: src/{markers,mixdown,source-profile,shortcuts}.mjs, src/{MixExportModal,BatchModal,ShortcutsPanel}.tsx, src/{main,StemTimeline,GuideSepPanel,DetailPicker}.tsx, src/media-transport.mjs, electron/{batch,mix-export}.mjs, electron/{main,projects,separation,preload}, comfy_nodes/StemStudio/{detail_nodes.py,guidesep_worker.py}, scripts/{make-workflows,synth-signals}.mjs, workflows/**, tests, README.md, docs/ARCHITECTURE.md.
+  Next: User verifies in `npm run dev` and reports issues.
 
 ### W-20261017-32: Cleanup and ComfyUI workflows
 

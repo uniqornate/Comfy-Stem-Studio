@@ -116,13 +116,13 @@ class StemStudioGuideSep:
     """User-guided music separation (GuideSep, MIT). Runs in a private runtime prepared from the app."""
     @classmethod
     def INPUT_TYPES(cls):
-        return {'required': {'audio': ('AUDIO',), 'reference': ('AUDIO',), 'steps': ('INT', {'default': 8, 'min': 4, 'max': 24, 'step': 1})}}
+        return {'required': {'audio': ('AUDIO',), 'reference': ('AUDIO',), 'steps': ('INT', {'default': 8, 'min': 4, 'max': 24, 'step': 1})}, 'optional': {'reference_offset': ('FLOAT', {'default': 0.0, 'min': -600.0, 'max': 600.0, 'step': 0.1})}}
     RETURN_TYPES = ('AUDIO', 'AUDIO')
     RETURN_NAMES = ('target', 'remainder')
     FUNCTION = 'extract'
     CATEGORY = 'Stem Studio'
 
-    def extract(self, audio, reference, steps=8):
+    def extract(self, audio, reference, steps=8, reference_offset=0.0):
         import json
         import os
         import subprocess
@@ -150,7 +150,7 @@ class StemStudioGuideSep:
             folder = Path(directory)
             for name, item in [('input.wav', audio), ('reference.wav', reference)]:
                 sf.write(folder / name, item['waveform'][0].float().cpu().numpy().T, int(item['sample_rate']), subtype='FLOAT')
-            (folder / 'request.json').write_text(json.dumps({'weights': str(weights), 'device': device, 'steps': int(steps)}), encoding='utf-8')
+            (folder / 'request.json').write_text(json.dumps({'weights': str(weights), 'device': device, 'steps': int(steps), 'reference_offset': float(reference_offset)}), encoding='utf-8')
             env = dict(os.environ)
             for key in ['PYTHONHOME', 'PYTHONPATH', 'ELECTRON_RUN_AS_NODE']:
                 env.pop(key, None)

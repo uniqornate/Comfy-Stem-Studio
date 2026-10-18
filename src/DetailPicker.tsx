@@ -14,9 +14,8 @@ const presets: Record<string, string[]> = {
   Machines: ['Car', 'Engine', 'Motorcycle', 'Train', 'Airplane', 'Telephone', 'Alarm', 'Clock', 'Gunshot, gunfire'],
   Music: ['Music', 'Piano', 'Guitar', 'Drum', 'Violin, fiddle', 'Singing'],
 };
-export function DetailPicker({ request, profile, engine, busy, close, extract, submitShortcut, sourceUrl, variant, setVariant }: { variant: 'small-tv' | 'large-tv'; setVariant: (variant:'small-tv'|'large-tv') => void; request: DetailRequest; profile: Profile; engine: Engine | null; busy: boolean; close: () => void; extract: (mode: 'uss' | 'sam' | 'guidesep', target: string, guidance?: SAMGuidance, reference?: ReferenceAudio) => void; sourceUrl: string; submitShortcut: { current: () => void } }) {
+export function DetailPicker({ request, profile, engine, busy, close, extract, submitShortcut, sourceUrl, variant, setVariant, reference, setReference, referenceOffset, setReferenceOffset }: { reference: ReferenceAudio | null; setReference: (value: ReferenceAudio | null) => void; referenceOffset: number; setReferenceOffset: (value: number) => void; variant: 'small-tv' | 'large-tv'; setVariant: (variant:'small-tv'|'large-tv') => void; request: DetailRequest; profile: Profile; engine: Engine | null; busy: boolean; close: () => void; extract: (mode: 'uss' | 'sam' | 'guidesep', target: string, guidance?: SAMGuidance, reference?: ReferenceAudio) => void; sourceUrl: string; submitShortcut: { current: () => void } }) {
   const [mode, setMode] = useState<'uss' | 'sam' | 'guidesep'>('sam');
-  const [reference, setReference] = useState<ReferenceAudio | null>(null);
   const [guide, setGuide] = useGuideSepStatus(profile);
   const [category, setCategory] = useState('Actions');
   const [target, setTarget] = useState('Walk, footsteps');
@@ -42,7 +41,7 @@ export function DetailPicker({ request, profile, engine, busy, close, extract, s
     <div className="target-grid" role="group" aria-label="Target sound">{choices.map(name => <button key={name} aria-pressed={target === name} onClick={() => setTarget(name)}>{name}</button>)}{!choices.length && <p>No matching sounds.</p>}</div>
     </>}
     {mode === 'sam' && <SAMGuidanceEditor range={request} sourceUrl={sourceUrl} value={guidance} change={setGuidance} supported={!!engine?.samPrompts} visualSupported={!!engine?.samVisual}/>}
-    {mode === 'guidesep' && <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} busy={busy}/>}
+    {mode === 'guidesep' && <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} offset={referenceOffset} setOffset={setReferenceOffset} busy={busy}/>}
     {guidanceError && <p className="error-banner" role="alert">{guidanceError}</p>}
     {mode === 'sam' && <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={variant} busy={busy}/>}
     {!engine?.detailRange && <p className="helper">Update the integration with the latest installer and restart idle ComfyUI.</p>}
