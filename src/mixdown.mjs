@@ -24,13 +24,3 @@ export function encodeWav(samples, rate, bits = 24) {
   }
   return new Uint8Array(buffer);
 }
-// Combined RMS of several channels in dBFS, sampled sparsely so long takes stay cheap.
-export function rmsDb(channels, stride = 7) {
-  let sum = 0, count = 0;
-  for (const channel of channels) { let own = 0, n = 0; for (let i = 0; i < channel.length; i += stride) { own += channel[i] * channel[i]; n++; } if (n) { sum += own / n; count++; } }
-  return count && sum > 0 ? 10 * Math.log10(sum) : -120;
-}
-export function matchGainDb(referenceDb, currentDb, limit = 12) {
-  if (!Number.isFinite(referenceDb) || !Number.isFinite(currentDb) || referenceDb <= -100 || currentDb <= -100) return 0;
-  return Math.max(-limit, Math.min(limit, referenceDb - currentDb));
-}

@@ -1,9 +1,35 @@
 $unifiedWorker = {
- param($state,$packs,$modelRoot,$transferPath,$legacyRoot,$appDir,$comfyRoot,$comfyUrl,$allowRestart,$workDir)
+ param($state,$packs,$modelRoot,$transferPath,$legacyRoot,$appDir,$comfyRoot,$comfyUrl,$allowRestart,$workDir,$installParent,$gpu)
  $ErrorActionPreference='Stop'
  $process=$null
  try {
   . (Join-Path (Split-Path $transferPath -Parent) 'Download-Worker.ps1')
+  if ($installParent) {
+   $state.Phase='comfy'; $state.Percent=0; $state.Status='Installing ComfyUI'; $state.Detail='Preparing the download.'
+   $comfyStatus=Join-Path $workDir 'comfy-status.json'; $comfyResult=Join-Path $workDir 'comfy-result.json'; $comfyCancel=Join-Path $workDir 'comfy-cancel'
+   foreach($path in @($comfyStatus,$comfyResult,$comfyCancel)){ if([IO.File]::Exists($path)){[IO.File]::Delete($path)} }
+   $comfyConfig=@{parent=$installParent;gpu=$gpu;statusFile=$comfyStatus;resultFile=$comfyResult;cancelFile=$comfyCancel}
+   $comfyConfigFile=Join-Path $workDir 'comfy-config.json'
+   [IO.File]::WriteAllText($comfyConfigFile,($comfyConfig|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
+   $comfyStart=New-Object Diagnostics.ProcessStartInfo
+   $comfyStart.FileName=Join-Path $appDir 'Stem Studio.exe'
+   $comfyStart.Arguments='"'+(Join-Path $appDir 'resources\setup\comfy-install.mjs')+'" "'+$comfyConfigFile+'"'
+   $comfyStart.UseShellExecute=$false; $comfyStart.CreateNoWindow=$true; $comfyStart.WindowStyle='Hidden'
+   $comfyStart.RedirectStandardError=$true; $comfyStart.RedirectStandardOutput=$true
+   $comfyStart.EnvironmentVariables['ELECTRON_RUN_AS_NODE']='1'
+   $comfyStart.EnvironmentVariables['STEM_QUIET_PROCESS']=Join-Path $appDir 'resources\setup\QuietProcess.exe'
+   $comfyProcess=[Diagnostics.Process]::Start($comfyStart)
+   $comfyErr=$comfyProcess.StandardError.ReadToEndAsync(); $comfyOut=$comfyProcess.StandardOutput.ReadToEndAsync()
+   while(!$comfyProcess.WaitForExit(250)) {
+    if($state.Cancel -and ![IO.File]::Exists($comfyCancel)){[IO.File]::WriteAllText($comfyCancel,'cancel')}
+    if([IO.File]::Exists($comfyStatus)){try{$c=Get-Content -LiteralPath $comfyStatus -Raw -Encoding UTF8|ConvertFrom-Json; $state.Status=$c.message; $state.Detail=$c.detail; if($null -ne $c.percent){$state.Percent=[double]$c.percent}}catch{}}
+   }
+   $comfyProcess.Dispose()
+   if(![IO.File]::Exists($comfyResult)){ throw ('ComfyUI installation ended without a result. '+$comfyErr.GetAwaiter().GetResult()) }
+   $comfyDone=Get-Content -LiteralPath $comfyResult -Raw -Encoding UTF8|ConvertFrom-Json
+   if(!$comfyDone.success){ throw $comfyDone.detail }
+   $comfyRoot=$comfyDone.root; $modelRoot=Join-Path $comfyRoot 'models\audio_separation'; $state.Percent=-1
+  }
   if ($state.Cancel) { throw 'Setup cancelled.' }
   $download=[hashtable]::Synchronized(@{Running=$true;Cancel=[bool]$state.Cancel;Done=$false;Success=$false;Bytes=[long]0;Total=[long]0;Status='Checking existing models';Error=''})
   $state.Download=$download; $state.Phase='models'

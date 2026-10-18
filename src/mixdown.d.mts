@@ -2,5 +2,3 @@ import type { ChannelEdit } from './clip-edits.mjs';
 export type MixPlanItem = { id: string; level: number; segments: { start: number; end: number; gain: number }[] };
 export function mixPlan(options: { tracks: { id: string; duration: number }[]; mix: Record<string, { mute: boolean; level: number }>; edits?: Record<string, ChannelEdit>; duration: number; selected?: string[] }): MixPlanItem[];
 export function encodeWav(samples: Float32Array, rate: number, bits?: 16 | 24 | 32): Uint8Array;
-export function rmsDb(channels: Float32Array[], stride?: number): number;
-export function matchGainDb(referenceDb: number, currentDb: number, limit?: number): number;

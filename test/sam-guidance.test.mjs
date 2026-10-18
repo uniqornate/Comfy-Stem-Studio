@@ -22,9 +22,10 @@ test('visual marks are bounded and normalized; empty masks and long selections f
   for (const visual of [{ keyframes: [] }, { keyframes: [{ time: 11, box: { ...box, x: .9 } }] }]) assert.throws(() => normalizeGuidance({ visual }, range));
   assert.throws(() => normalizeGuidance({ visual: { keyframes: [{ time: 11, box }] } }, { start: 0, end: 40 }), /30 seconds/);
 });
-test('manual visual box interpolation holds endpoints and interpolates movement', () => {
+test('manual visual box interpolates between marks, exists only inside them, and a single mark holds', () => {
   const frames = [{ time: 0, box }, { time: 10, box: { ...box, x: .5 } }];
-  assert.equal(interpolatedBox(frames, -1).x, .1); assert.ok(Math.abs(interpolatedBox(frames, 5).x - .3) < 1e-10); assert.equal(interpolatedBox(frames, 20).x, .5);
+  assert.equal(interpolatedBox(frames, -1), null); assert.equal(interpolatedBox(frames, 0).x, .1); assert.ok(Math.abs(interpolatedBox(frames, 5).x - .3) < 1e-10); assert.equal(interpolatedBox(frames, 10).x, .5); assert.equal(interpolatedBox(frames, 20), null);
+  assert.equal(interpolatedBox([frames[0]], 99).x, .1);
 });
 test('SAM multimodal graph uses native LoadVideo, correct video offset, prompt and anchors', () => {
   const graph = stemWorkflow({ mode: 'sam', target: 'Door', range, sam: { description: 'wooden door closing', anchors: [{ kind: '+', start: 12, end: 13 }], visual: { keyframes: [{ time: 12, box }] } } });

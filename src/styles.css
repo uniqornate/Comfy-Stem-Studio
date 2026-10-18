@@ -273,3 +273,23 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 @media (max-width:1280px){.tele-card strong i{display:none}.tele-card{padding:0 8px}}
 .studio-workspace .floating-preview .preview-stage video{object-fit:cover}
 .studio-workspace .floating-preview{border-radius:14px;overflow:hidden}
+
+/* Closable take tabs */
+.take-tab{position:relative}
+.take-close{display:grid;place-items:center;width:15px;height:15px;margin-right:-4px;border-radius:50%;color:var(--dim);opacity:0;transition:opacity .12s,background .12s}
+.take-tab:hover .take-close,.take-tab:focus-visible .take-close{opacity:1}
+.take-close:hover{background:rgba(255,255,255,.14);color:var(--text)}
+
+/* Draggable time span for SAM sound examples */
+.range-bar{position:relative;height:26px;margin:6px 0;border-radius:8px;background:#211927;border:1px solid var(--border);cursor:crosshair;touch-action:none;user-select:none;overflow:hidden}
+.range-anchor{position:absolute;top:0;bottom:0;pointer-events:auto}
+.range-anchor.positive{background:#f2ff5933;border-left:1px solid #f2ff59aa;border-right:1px solid #f2ff59aa}
+.range-anchor.negative{background:#ff8a7a33;border-left:1px solid #ff8a7aaa;border-right:1px solid #ff8a7aaa}
+.range-span{position:absolute;top:2px;bottom:2px;border-radius:6px;background:#ffffff26;border:1px solid #ffffff88;cursor:grab}
+.range-span:active{cursor:grabbing}
+.range-handle{position:absolute;top:-2px;bottom:-2px;width:9px;padding:0;border:0;background:#ffffffcc;cursor:ew-resize;border-radius:4px}
+.range-handle-from{left:-4px}
+.range-handle-to{right:-4px}
+.range-handle:focus-visible{outline:2px solid var(--yellow);outline-offset:1px}
+.span-readout{display:flex;align-items:center;gap:8px;font:10.5px Consolas,monospace;color:var(--muted)}
+.span-readout output{flex:1}

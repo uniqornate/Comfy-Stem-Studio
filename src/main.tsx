@@ -25,7 +25,6 @@ import { ShortcutsPanel } from './ShortcutsPanel';
 import { BatchModal } from './BatchModal';
 import { normalizeMarkers } from './markers.mjs';
 import { clampFloat, resizeFloat } from './float-geometry.mjs';
-import { matchGainDb } from './mixdown.mjs';
 import { analyzeSource, suggestModel } from './source-profile.mjs';
 import type { BatchOptions, MixExportOptions } from './types';
 const STEM_MODELS = ['mrx', 'bandit', 'sfc'];
@@ -98,9 +97,6 @@ function App() {
   const [referenceOffset, setReferenceOffset] = useState(0);
   const [mixture, setMixture] = useState<ReferenceAudio | null>(null);
   const [markers, setMarkers] = useState<number[]>([]);
-  const [abPrev, setAbPrev] = useState('');
-  const [loudness, setLoudness] = useState<Record<string, number>>({});
-  const [matchLoudness, setMatchLoudnessState] = useState(() => { try { return localStorage.getItem('matchLoudness') !== 'off'; } catch { return true; } });
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [suggestion, setSuggestion] = useState<{ model: string; text: string; detail: string } | null>(null);
@@ -126,13 +122,7 @@ function App() {
   const currentRun = runs.find(run => run.runId === selectedRun) || runs.at(-1);
   const activeId = currentRun?.runId || '';
   const selectedRef = useRef(''); selectedRef.current = activeId;
-  const pickRun = (id: string) => { if (id !== selectedRef.current) setAbPrev(selectedRef.current); setSelectedRun(id); setDetailRequest(null); setDetailOpen(false); };
-  const activeIndex = runs.findIndex(run => run.runId === activeId);
-  const abTarget = abPrev && abPrev !== activeId && runs.some(run => run.runId === abPrev) ? abPrev : runs.length > 1 ? (activeIndex > 0 ? runs[activeIndex - 1].runId : runs[1].runId) || '' : '';
-  const onLoudness = useCallback((id: string, db: number) => setLoudness(previous => previous[id] === db ? previous : { ...previous, [id]: db }), []);
-  const referenceDb = loudness[runs[0]?.runId || ''];
-  const masterGain = matchLoudness && activeId && Number.isFinite(referenceDb) && Number.isFinite(loudness[activeId]) ? 10 ** (matchGainDb(referenceDb, loudness[activeId]) / 20) : 1;
-  const setMatchLoudness = (value: boolean) => { setMatchLoudnessState(value); try { localStorage.setItem('matchLoudness', value ? 'on' : 'off'); } catch { /* optional */ } };
+  const pickRun = (id: string) => { setSelectedRun(id); setDetailRequest(null); setDetailOpen(false); };
   const shownStems = currentRun?.stems || job.stems;
   const modelNames: Record<string, string> = Object.fromEntries(MODELS.map(item => [item.id, item.name]));
   const modelKind = MODELS.find(item => item.id === model)?.kind || 'stems';
@@ -175,7 +165,7 @@ function App() {
     const floating = value.view.floatPosition; if (floating && Number.isFinite(floating.x) && Number.isFinite(floating.y)) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - 100, floating.x)), y: Math.max(0, Math.min(window.innerHeight - 60, floating.y)) });
     if (value.view.floatSize) setFloatWidth(Math.max(180, Math.min(window.innerWidth - 16, value.view.floatSize.width)));
     setExportMode(value.view.exportMode === 'tracks' ? 'tracks' : 'mix');
-    setMarkers(normalizeMarkers(value.view.markers)); setAbPrev(''); setLoudness({});
+    setMarkers(normalizeMarkers(value.view.markers));
     setProjectStatus('Saved'); setError(value.warnings.join(' '));
   }
   useEffect(() => {
@@ -270,7 +260,6 @@ function App() {
       setRuns(values => values.map(value => value.runId === job.rootRunId ? { ...value, stems: [...value.stems, ...job.stems.filter(stem => !value.stems.some(existing => existing.id === stem.id))] } : value));
     } else {
       setRuns(values => values.some(value => value.runId === job.runId) ? values : [...values, job].slice(-12));
-      if (selectedRef.current !== job.runId) setAbPrev(selectedRef.current);
       setSelectedRun(job.runId);
     }
   }, [job.runId]);
@@ -329,6 +318,17 @@ function App() {
     try { const path = id ? await window.desktop.saveStem(id, timelines.current[currentRun?.runId || ""]?.edits?.[id], profile) : await window.desktop.saveAllStems(shownStems.map(stem => stem.id), timelines.current[currentRun?.runId || ""]?.edits, profile); if (path) setSaveNotice(`Stems saved to ${path}`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setExporting(false); }
+  }
+  // Closing only removes the take from this project's view; its audio files stay where ComfyUI wrote them.
+  function closeTake(id: string, others = false) {
+    if (jobBusy && job.rootRunId && (others || job.rootRunId === id)) return;
+    const remaining = others ? runs.filter(run => run.runId === id) : runs.filter(run => run.runId !== id);
+    if (remaining.length === runs.length) return;
+    for (const run of runs) if (!remaining.includes(run) && run.runId) delete timelines.current[run.runId];
+    const index = runs.findIndex(run => run.runId === id);
+    setRuns(remaining);
+    if (!remaining.some(run => run.runId === activeId)) setSelectedRun(others ? id : remaining[Math.min(index, remaining.length - 1)]?.runId || '');
+    setDetailRequest(null); setDetailOpen(false);
   }
   function chooseModel(id: string) { setModel(id); const kind = MODELS.find(item => item.id === id)?.kind; setModelModal(kind === 'prompt' ? 'sam' : kind === 'reference' ? 'guidesep' : null); }
   function makeReference(stem: Stem) { setReference({ name: stem.label, size: stem.size, url: stem.url }); setModel('guidesep'); setModelModal('guidesep'); setSaveNotice(`"${stem.label}" is now the GuideSep reference.`); }
@@ -431,7 +431,7 @@ function App() {
           onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { const box = clampFloat({ ...floatSize, left: drag.left + dx, top: drag.top + dy }, { width: window.innerWidth, height: window.innerHeight }); setFloatPosition({ x: box.left, y: box.top }); } }}
           onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloatBox} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onLoadedMetadata={event => setVideoRatio(event.currentTarget.videoWidth / event.currentTarget.videoHeight || 16 / 9)} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
       </div>
-      <StemTimeline key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} onAB={() => { if (abTarget) pickRun(abTarget); }} abReady={!!abTarget} matchLoudness={matchLoudness} setMatchLoudness={setMatchLoudness} onLoudness={onLoudness} masterGain={masterGain} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
+      <StemTimeline closeTake={closeTake} key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
       {saveNotice && !settings && <p className="save-notice" role="status"><Check size={14}/>{saveNotice}</p>}
       {error && !settings && <p className="error-banner" role="alert">{error}</p>}

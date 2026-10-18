@@ -24,3 +24,17 @@ The installer now offers BandIt v2 multilingual (446680129 bytes, official Zenod
 ## 0.4.1 transport and BandIt source update
 
 Pinned third-party BandIt mirror: https://huggingface.co/jsoncx/bandit-v2/tree/fde0ff714b879259f3f436a0eb9046626f82a880 . Published metadata lists original-sized checkpoint-multi.ckpt (446680129 bytes), SHA256 abcfccf65446752a057f4a302c941479a54b7560ebf8d7bca039d2ea98e64cfc. Downloader requires original Zenodo MD5 in addition to that hash, with Zenodo fallback. Mirror repository license does not replace the original weight license. Only metadata was read during this change; no model binary downloaded or executed by the agent. All five large checkpoint files share four concurrent 8 MiB range tasks, per-range resume/retry/slow-source recovery and mandatory full-model hashes. No new mirror was invented for other models; configured original pinned sources remain.
+
+
+## Where files live
+
+Decision for the desktop installer and for node-pack installs: **every model file goes inside your ComfyUI, in `<ComfyUI>/models/audio_separation/<model>`**, never into the app folder and never into `custom_nodes/StemStudio`.
+
+- The StemStudio node registers `audio_separation` with ComfyUI's `folder_paths`, so `extra_model_paths.yaml` can move the whole category to another drive without touching Stem Studio.
+- Weights survive node updates and removal. ComfyUI Manager deletes a node's folder when it is uninstalled or reinstalled, which would throw away gigabytes of verified downloads if the weights lived there.
+- It follows the convention other ComfyUI tools use, so files are visible, shareable between tools and easy to back up.
+- Includes the Hugging Face cache that SAM Audio and GuideSep need for their encoders (`models/audio_separation/sam-shared-cache`, `guidesep-v1/cache`).
+
+What is deliberately not a model file: the private Python environments for SAM Audio and GuideSep and the package download cache. They are tooling, shared by both features and fully regenerable, so the desktop app keeps them in its own data folder (`%APPDATA%\stem-studio`). A node-pack install should keep them next to the node, so removing the node removes them too.
+
+If ComfyUI is not installed yet, the desktop setup can install the official portable build first (GitHub release, checked against the SHA-256 GitHub publishes, unpacked with Windows `tar` or 7-Zip) and then uses its `models` folder as above.

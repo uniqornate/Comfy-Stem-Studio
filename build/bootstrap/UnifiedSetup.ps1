@@ -15,7 +15,7 @@ $manifest=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'models.json') -Raw|
 $settings=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'version.json') -Raw|ConvertFrom-Json
 $window=[Windows.Markup.XamlReader]::Load([Xml.XmlReader]::Create((Join-Path $PSScriptRoot 'Setup.xaml')))
 $ui=@{}
-foreach($name in @('TitleBar','Minimize','Close','Step0','Step1','Step2','Step3','Version','WelcomePage','DestinationPage','ModelsPage','ProgressPage','Destination','BrowseDestination','ComfyFolder','BrowseComfy','ComfyHint','ComfyAddress','RestartEngine','ModelFolder','Sfc','Uss','Bandit','Mrx','Consent','LicenseText','ProgressTitle','ProgressCopy','Status','Progress','Details','Outcome','Error','Back','Next')){$ui[$name]=$window.FindName($name)}
+foreach($name in @('TitleBar','Minimize','Close','Step0','Step1','Step2','Step3','Version','WelcomePage','DestinationPage','ModelsPage','ProgressPage','Destination','BrowseDestination','HaveComfy','InstallComfy','ExistingPanel','InstallPanel','InstallParent','BrowseInstall','GpuHint','ComfyFolder','BrowseComfy','ComfyHint','ComfyAddress','RestartEngine','ModelFolder','Sfc','Uss','Bandit','Mrx','Consent','LicenseText','ProgressTitle','ProgressCopy','Status','Progress','Details','Outcome','Error','Back','Next')){$ui[$name]=$window.FindName($name)}
 $area=[Windows.SystemParameters]::WorkArea
 $window.Width=[Math]::Min(980,$area.Width-24); $window.Height=[Math]::Min(740,$area.Height-24)
 $window.MinWidth=[Math]::Min(740,$window.Width); $window.MinHeight=[Math]::Min(520,$window.Height)
@@ -37,12 +37,24 @@ function Set-Comfy([string]$path){
  $ui.ComfyHint.Text='Selected engine: '+$resolved
 }
 foreach($candidate in @($profile.installation,$env:COMFYUI_PATH,'C:\AI\ComfyUI\ComfyUI_windows_portable\ComfyUI',(Join-Path $env:USERPROFILE 'ComfyUI'),(Join-Path $env:USERPROFILE 'Documents\ComfyUI'))){if(Resolve-Comfy $candidate){Set-Comfy $candidate; $ui.ComfyHint.Text='Detected installation. Confirm this folder before continuing.';break}}
+$script:comfyInstall=$false; $script:installParent=''; $script:gpuKind='nvidia'
+try{$gpus=@(Get-CimInstance Win32_VideoController -ErrorAction Stop|ForEach-Object{$_.Name})}catch{$gpus=@()}
+$gpuText=$gpus -join ' '
+if($gpuText-match '(?i)nvidia|geforce|rtx|quadro'){$script:gpuKind='nvidia'}elseif($gpuText-match '(?i)radeon|amd'){$script:gpuKind='amd'}elseif($gpuText-match '(?i)intel'){$script:gpuKind='intel'}
+$ui.InstallParent.Text=Join-Path $env:USERPROFILE 'ComfyUI'
+$ui.GpuHint.Text=if($gpus.Count){'Detected graphics: '+($gpus -join ', ')+'. Setup downloads the '+$script:gpuKind.ToUpper()+' build.'}else{'No graphics adapter was detected. Setup downloads the NVIDIA build.'}
+function Set-ComfyMode([string]$mode){
+ $ui.HaveComfy.IsChecked=($mode-eq 'have'); $ui.InstallComfy.IsChecked=($mode-eq 'install')
+ $ui.ExistingPanel.Visibility=if($mode-eq 'have'){'Visible'}else{'Collapsed'}; $ui.InstallPanel.Visibility=if($mode-eq 'install'){'Visible'}else{'Collapsed'}
+ if($mode-eq 'install'){$ui.ModelFolder.Text=Join-Path $ui.InstallParent.Text 'ComfyUI_windows_portable\ComfyUI\models\audio_separation'}
+}
+if($ui.ComfyFolder.Text){Set-ComfyMode 'have'}
 if($profile.comfyUrl){$ui.ComfyAddress.Text=$profile.comfyUrl}
 $legacy=Join-Path $env:LOCALAPPDATA 'Stem Studio\models'
 if([IO.File]::Exists((Join-Path $legacy 'uss\at_soft.ckpt'))){$ui.Uss.IsChecked=$true}
 $ui.LicenseText.Text=($manifest.packs|ForEach-Object{"$($_.name)`n$($_.license)`n$($_.licenseUrl)`n$($_.source)"}) -join "`n`n"
 $script:page=0; $script:stage='idle'; $script:process=$null; $script:job=$null; $script:runspace=$null; $script:async=$null; $script:launchRequested=$false; $script:installed=$false; $script:installFolder=''; $script:selected=@()
-$state=[hashtable]::Synchronized(@{Running=$false;Cancel=$false;Done=$false;Success=$false;Phase='';Status='';Detail='';Error='';Download=$null})
+$state=[hashtable]::Synchronized(@{Running=$false;Cancel=$false;Done=$false;Success=$false;Phase='';Status='';Detail='';Error='';Download=$null;Percent=-1})
 function Set-Page([int]$index){
  $script:page=$index; $pages=@('WelcomePage','DestinationPage','ModelsPage','ProgressPage')
  for($i=0;$i-lt 4;$i++){$ui[$pages[$i]].Visibility=if($i-eq $index){'Visible'}else{'Collapsed'}; $ui["Step$i"].Foreground=if($i-eq $index){'#F2FF59'}else{'#9B939F'}}
@@ -51,9 +63,23 @@ function Set-Page([int]$index){
 }
 function Pick-Folder([string]$initial){$picker=New-Object Windows.Forms.FolderBrowserDialog; $picker.SelectedPath=$initial; try{if($picker.ShowDialog()-eq [Windows.Forms.DialogResult]::OK){return $picker.SelectedPath};return $null}finally{$picker.Dispose()}}
 function Validate-Choices {
- $root=Resolve-Comfy $ui.ComfyFolder.Text
- if(!$root){throw 'Choose your existing ComfyUI first. A valid main.py is required.'}
- Set-Comfy $root
+ if(!$ui.HaveComfy.IsChecked-and !$ui.InstallComfy.IsChecked){throw 'Tell setup whether you already have ComfyUI.'}
+ if($ui.InstallComfy.IsChecked){
+  $parent=$ui.InstallParent.Text.Trim()
+  if(!$parent-or $parent.IndexOfAny([char[]]'"*?<>|')-ge 0-or $parent-notmatch '^[A-Za-z]:\\'-or $parent.Length-gt 100){throw 'Choose a local folder for ComfyUI on a drive, with a path shorter than 100 characters.'}
+  $full=[IO.Path]::GetFullPath($parent).TrimEnd('\')
+  $found=Resolve-Comfy (Join-Path $full 'ComfyUI_windows_portable')
+  if($found){Set-Comfy $found;Set-ComfyMode 'have';$script:comfyInstall=$false}
+  else{
+   if((New-Object IO.DriveInfo($full.Substring(0,1))).AvailableFreeSpace-lt 12GB){throw 'ComfyUI needs about 12 GB of free disk space on that drive.'}
+   $script:comfyInstall=$true;$script:installParent=$full
+   $ui.ModelFolder.Text=Join-Path $full 'ComfyUI_windows_portable\ComfyUI\models\audio_separation'
+  }
+ } else {
+  $root=Resolve-Comfy $ui.ComfyFolder.Text
+  if(!$root){throw 'Choose your existing ComfyUI first. A valid main.py is required.'}
+  Set-Comfy $root;$script:comfyInstall=$false
+ }
  $address=[uri]$ui.ComfyAddress.Text.Trim()
  if($address.Scheme-ne 'http'-or $address.Host-notin @('127.0.0.1','localhost')-or $address.AbsolutePath-ne '/'-or $address.UserInfo-or $address.Query-or $address.Fragment){throw 'Unified setup requires a local HTTP ComfyUI address, such as http://127.0.0.1:8188.'}
  $value=$ui.Destination.Text.Trim()
@@ -64,11 +90,11 @@ function Validate-Choices {
 function Close-Worker {if($script:job){try{$script:job.EndInvoke($script:async)}catch{}finally{$script:job.Dispose();$script:runspace.Dispose();$script:job=$null}}}
 function Start-Preparation {
  Close-Worker
- $state.Cancel=$false;$state.Done=$false;$state.Success=$false;$state.Error='';$state.Running=$true;$state.Download=$null;$state.Phase='starting'
+ $state.Cancel=$false;$state.Done=$false;$state.Success=$false;$state.Error='';$state.Running=$true;$state.Download=$null;$state.Phase='starting';$state.Percent=-1
  $script:stage='preparing';$ui.Back.Visibility='Collapsed';$ui.Error.Text='';$ui.Close.IsEnabled=$true;$ui.Next.IsEnabled=$true;$ui.Next.Content='Cancel preparation'
  $ui.ProgressTitle.Text='Preparing everything.';$ui.ProgressCopy.Text='Models, ComfyUI integration and private proxy in one flow. Existing valid files are reused.'
  $script:runspace=[RunspaceFactory]::CreateRunspace();$script:runspace.Open();$script:job=[PowerShell]::Create();$script:job.Runspace=$script:runspace
- $null=$script:job.AddScript($unifiedWorker.ToString()).AddArgument($state).AddArgument($script:selected).AddArgument($ui.ModelFolder.Text).AddArgument((Join-Path $PSScriptRoot 'Transfer.cs')).AddArgument($legacy).AddArgument($script:installFolder).AddArgument($ui.ComfyFolder.Text).AddArgument($ui.ComfyAddress.Text.TrimEnd('/')).AddArgument([bool]$ui.RestartEngine.IsChecked).AddArgument($PSScriptRoot)
+ $null=$script:job.AddScript($unifiedWorker.ToString()).AddArgument($state).AddArgument($script:selected).AddArgument($ui.ModelFolder.Text).AddArgument((Join-Path $PSScriptRoot 'Transfer.cs')).AddArgument($legacy).AddArgument($script:installFolder).AddArgument($ui.ComfyFolder.Text).AddArgument($ui.ComfyAddress.Text.TrimEnd('/')).AddArgument([bool]$ui.RestartEngine.IsChecked).AddArgument($PSScriptRoot).AddArgument($(if($script:comfyInstall){$script:installParent}else{''})).AddArgument($script:gpuKind)
  $script:async=$script:job.BeginInvoke()
 }
 function Finish-Preparation {
@@ -80,6 +106,8 @@ $ui.TitleBar.Add_MouseLeftButtonDown({try{$window.DragMove()}catch{}})
 $ui.Minimize.Add_Click({$window.WindowState='Minimized'});$ui.Close.Add_Click({$window.Close()})
 $window.Add_Closing({param($sender,$eventArgs)if($script:stage-eq 'installing'){$eventArgs.Cancel=$true};if($state.Running){$eventArgs.Cancel=$true;$state.Cancel=$true;if($state.Download){$state.Download.Cancel=$true};$ui.Next.IsEnabled=$false}})
 $ui.BrowseComfy.Add_Click({try{$folder=Pick-Folder $ui.ComfyFolder.Text;if($folder){Set-Comfy $folder}}catch{$ui.Error.Text=$_.Exception.Message}})
+$ui.HaveComfy.Add_Click({Set-ComfyMode 'have'});$ui.InstallComfy.Add_Click({Set-ComfyMode 'install'})
+$ui.BrowseInstall.Add_Click({$folder=Pick-Folder $ui.InstallParent.Text;if($folder){$ui.InstallParent.Text=$folder;Set-ComfyMode 'install'}})
 $ui.BrowseDestination.Add_Click({$folder=Pick-Folder $ui.Destination.Text;if($folder){$ui.Destination.Text=$folder}})
 $ui.Back.Add_Click({if($script:stage-eq 'finished'){Start-Preparation}else{Set-Page ($script:page-1)}})
 $ui.Next.Add_Click({
@@ -107,6 +135,7 @@ $timer.Add_Tick({
   if($script:stage-eq 'preparing'){
    $ui.Progress.Visibility='Visible'
    if($state.Phase-eq 'models'-and $state.Download){$download=$state.Download;$ui.Progress.IsIndeterminate=$false;$ui.Progress.Value=if($download.Total){[Math]::Min(100,100*$download.Bytes/$download.Total)}else{0};$ui.Status.Text=$download.Status;$ui.Details.Text='{0:N1} / {1:N1} MiB | {2:N2} MiB/s' -f ($download.Bytes/1MB),($download.Total/1MB),($download.Rate/1MB)}
+   elseif($state.Phase-eq 'comfy'){$ui.Progress.IsIndeterminate=($state.Percent-lt 0);if($state.Percent-ge 0){$ui.Progress.Value=$state.Percent};$ui.Status.Text=$state.Status;$ui.Details.Text=$state.Detail}
    else{$ui.Progress.IsIndeterminate=$true;$ui.Status.Text=$state.Status;$ui.Details.Text=$state.Detail}
    if($script:async.IsCompleted-and !$state.Done){$state.Running=$false;$state.Done=$true;$state.Error='Preparation stopped unexpectedly. Retry with the same selections.'}
    if($state.Done){Finish-Preparation}

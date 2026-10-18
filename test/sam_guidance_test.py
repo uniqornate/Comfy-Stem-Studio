@@ -29,7 +29,9 @@ class Tests(unittest.TestCase):
         box = {'x': .1, 'y': .1, 'width': .2, 'height': .2}
         frames = [{'time': 0, 'box': box}, {'time': 4, 'box': {**box, 'x': .5}}]
         self.assertAlmostEqual(contract.box_at(frames, 2)['x'], .3)
-        self.assertEqual(contract.box_at(frames, 7)['x'], .5)
+        self.assertEqual(contract.box_at(frames, 4)['x'], .5)
+        self.assertIsNone(contract.box_at(frames, 7)); self.assertIsNone(contract.box_at(frames, -1))
+        self.assertEqual(contract.box_at(frames[:1], 9)['x'], .1)
         with self.assertRaises(ValueError): contract.guidance(json.dumps({'keyframes': frames}), 40)
         with self.assertRaises(ValueError): contract.guidance(json.dumps({'keyframes': [{'time': 0, 'box': {**box, 'width': 2}}]}), 5)
         result = contract.guidance(json.dumps({'keyframes': frames, 'visualOnly': True, 'predictSpans': True}), 5)

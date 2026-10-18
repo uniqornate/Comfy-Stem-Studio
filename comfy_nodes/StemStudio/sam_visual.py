@@ -19,6 +19,8 @@ def masked_frames(video, start, duration, keyframes, destination):
         if rotation: rgb = np.rot90(rgb, k=rotation // 90)
         height, width = rgb.shape[:2]
         box = box_at(keyframes, float(moment))
+        if box is None:
+            output.append(np.zeros_like(rgb).transpose(2, 0, 1)); return
         x1, y1 = int(box['x'] * width), int(box['y'] * height)
         x2 = min(width, max(x1 + 1, math.ceil((box['x'] + box['width']) * width)))
         y2 = min(height, max(y1 + 1, math.ceil((box['y'] + box['height']) * height)))

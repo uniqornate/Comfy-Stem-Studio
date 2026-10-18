@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeftRight, Flag, Layers, Mic, Volume2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
+import { ArrowDownToLine, Flag, Layers, Mic, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
 import { fitEdit as channelEdit, splitEdit, trimEdit, gainEdit, gainAt, type ChannelEdit } from './clip-edits.mjs';
 import { pointerTime } from './timeline-geometry.mjs';
 import { groupedTracks, initialMix } from './detail-groups.mjs';
@@ -8,7 +8,6 @@ import type { Stem, TimelineView } from './types';
 import { MediaTransport, type TransportState } from './media-transport.mjs';
 import { usePosition } from './usePlayback';
 import { regionAt, removeMarker, stepMarker, toggleMarker } from './markers.mjs';
-import { rmsDb } from './mixdown.mjs';
 import { MixExportModal } from './MixExportModal';
 import type { MixExportOptions } from './types';
 import { emptyHistory, record, undo, redo, type History } from './history.mjs';
@@ -18,7 +17,7 @@ type Mix = { mute: boolean; solo: boolean; level: number; restoreMute?: boolean 
 type Snapshot = { mix: Record<string, Mix>; edits: Record<string, ChannelEdit> };
 type Take = { id: string; label: string };
 type Track = { stem: Stem; buffer: AudioBuffer; peaks: number[]; path: string; peak: number };
-type Props = { markers: number[]; setMarkers: (markers: number[]) => void; onAB: () => void; abReady: boolean; matchLoudness: boolean; setMatchLoudness: (value: boolean) => void; onLoudness: (id: string, db: number) => void; masterGain: number; useAsReference: (stem: Stem) => void; exportMixFile: (options: MixExportOptions) => Promise<string | null>; sourceName: string; takes: Take[]; selectedTake: string; selectTake: (id: string) => void; canExportVideo: boolean; initialView?: TimelineView; onViewChange: (view: TimelineView) => void; stems: Stem[]; save: (id?: string) => void; exporting: boolean; independent?: boolean; transport: MediaTransport; playback: TransportState; exportVideo: (mix: Record<string, Mix>) => void; expanded: boolean; toggleExpanded: () => void; resize: (delta: number) => void; resetSize: () => void; workspaceHeight: number; resizeBounds: { min: number; max: number }; details: (stem: Stem, start: number, end: number, picker: boolean) => void; detailBusy: boolean; detailAvailable: boolean };
+type Props = { closeTake: (id: string, others?: boolean) => void; markers: number[]; setMarkers: (markers: number[]) => void; useAsReference: (stem: Stem) => void; exportMixFile: (options: MixExportOptions) => Promise<string | null>; sourceName: string; takes: Take[]; selectedTake: string; selectTake: (id: string) => void; canExportVideo: boolean; initialView?: TimelineView; onViewChange: (view: TimelineView) => void; stems: Stem[]; save: (id?: string) => void; exporting: boolean; independent?: boolean; transport: MediaTransport; playback: TransportState; exportVideo: (mix: Record<string, Mix>) => void; expanded: boolean; toggleExpanded: () => void; resize: (delta: number) => void; resetSize: () => void; workspaceHeight: number; resizeBounds: { min: number; max: number }; details: (stem: Stem, start: number, end: number, picker: boolean) => void; detailBusy: boolean; detailAvailable: boolean };
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${(seconds % 60).toFixed(1).padStart(4, '0')}`;
 function peaks(buffer: AudioBuffer) {
   const count = Math.min(2200, buffer.length), result = new Array(count).fill(0);
@@ -51,7 +50,7 @@ function TimelineScrub({ transport, duration }: { transport: MediaTransport; dur
   const position = usePosition(transport);
   return <input className="timeline-scrub" type="range" min="0" max={duration || 1} step="0.01" value={position} onChange={event => transport.scrub(Number(event.target.value))} aria-label="Timeline playhead"/>;
 }
-export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness, setMatchLoudness, onLoudness, masterGain, useAsReference, exportMixFile, sourceName, takes, selectedTake, selectTake, canExportVideo, initialView, onViewChange, stems, save, exporting, independent = false, transport, playback, exportVideo, expanded, toggleExpanded, resize, resetSize, workspaceHeight, resizeBounds, details, detailBusy, detailAvailable }: Props) {
+export function StemTimeline({ closeTake, markers, setMarkers, useAsReference, exportMixFile, sourceName, takes, selectedTake, selectTake, canExportVideo, initialView, onViewChange, stems, save, exporting, independent = false, transport, playback, exportVideo, expanded, toggleExpanded, resize, resetSize, workspaceHeight, resizeBounds, details, detailBusy, detailAvailable }: Props) {
   const [tracks, setTracks] = useState<Track[]>([]), [mix, setMix] = useState<Record<string, Mix>>(() => normalizeSolo(initialView?.mix || {}));
   const mixRef = useRef(mix); mixRef.current = mix;
   const cache = useRef(new Map<string, Track>());
@@ -68,8 +67,15 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
   };
   const travelRef = useRef(travel); travelRef.current = travel;
   const [mixOpen, setMixOpen] = useState(false);
-  const loudness = useRef(onLoudness); loudness.current = onLoudness;
-  const markerTools = useRef({ markers, setMarkers, onAB }); markerTools.current = { markers, setMarkers, onAB };
+  const [takeMenu, setTakeMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!takeMenu) return;
+    const dismiss = (event: PointerEvent) => { if (!(event.target as Element)?.closest('.take-menu')) setTakeMenu(null); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setTakeMenu(null); };
+    window.addEventListener('pointerdown', dismiss); window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('pointerdown', dismiss); window.removeEventListener('keydown', key); };
+  }, [takeMenu]);
+  const markerTools = useRef({ markers, setMarkers }); markerTools.current = { markers, setMarkers };
   const tabs = useRef<HTMLDivElement>(null);
   const tabPan = useRef<{ x: number; left: number } | null>(null);
   const [tabFade, setTabFade] = useState({ left: false, right: false });
@@ -137,14 +143,11 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
       }
       if (!disposed) {
         const next = normalizeSolo(initialMix(stems, previousMix, independent)); setTracks(decoded); setMix(next); transport.setAudio(ctx, decoded, next);
-        const roots = decoded.filter(track => !track.stem.parentId);
-        loudness.current(selectedTake, rmsDb(roots.flatMap(track => Array.from({ length: track.buffer.numberOfChannels }, (_, channel) => track.buffer.getChannelData(channel)))));
       }
     })().catch(cause => { if (!disposed) setError(cause.message); }).finally(() => { if (!disposed) setLoading(false); });
     return () => { disposed = true; controller.abort(); transport.pause(); transport.setAudio(null, [], {}); void ctx.close(); };
   }, [signature, independent, transport]);
   useEffect(() => { transport.setMix(mix); }, [mix, transport]);
-  useEffect(() => { transport.setMaster(masterGain); }, [masterGain, transport]);
   useEffect(() => { transport.setEdits(edits); }, [edits, transport]);
   const splitAll = useRef(() => {});
   splitAll.current = () => { remember(); setEdits(previous => Object.fromEntries(stems.map(stem => [stem.id, splitEdit(previous[stem.id], transport.snapshot().position, duration)]))); };
@@ -153,7 +156,6 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
     const key = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || document.querySelector('.modal-backdrop') || (event.target as HTMLElement)?.matches('input:not([type=range]),textarea,select,[contenteditable=true]')) return;
       const tools = markerTools.current, position = transport.snapshot().position, total = transport.snapshot().duration;
-      if (event.altKey && event.code === 'KeyB') { event.preventDefault(); if (!event.repeat) tools.onAB(); return; }
       if (event.altKey || event.repeat) return;
       if (event.code === 'KeyM') { event.preventDefault(); if (total) tools.setMarkers(toggleMarker(tools.markers, position, total)); }
       else if (event.code === 'Comma' || event.code === 'Period') { const target = stepMarker(tools.markers, position, event.code === 'Comma' ? -1 : 1); if (target !== null) { event.preventDefault(); transport.seek(target); } }
@@ -220,11 +222,10 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
           onPointerMove={event => { if (tabPan.current && tabs.current) tabs.current.scrollLeft = tabPan.current.left + tabPan.current.x - event.clientX; }}
           onPointerUp={event => { tabPan.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
           onPointerCancel={() => { tabPan.current = null; }} onAuxClick={event => { if (event.button === 1) event.preventDefault(); }}>
-          {takes.map((take, index) => <button key={take.id} role="tab" aria-selected={take.id === selectedTake} className={`take-tab ${take.id === selectedTake ? 'is-selected' : ''}`} onClick={() => selectTake(take.id)} data-tip={take.label}><small>{String(index + 1).padStart(2, '0')}</small><span>{take.label}</span></button>)}
+          {takes.map((take, index) => <button key={take.id} role="tab" aria-selected={take.id === selectedTake} className={`take-tab ${take.id === selectedTake ? 'is-selected' : ''}`} onClick={() => selectTake(take.id)} onContextMenu={event => { event.preventDefault(); setTakeMenu({ id: take.id, x: Math.min(event.clientX, window.innerWidth - 170), y: Math.min(event.clientY, window.innerHeight - 90) }); }} data-tip={take.label}><small>{String(index + 1).padStart(2, '0')}</small><span>{take.label}</span><span className="take-close" role="button" aria-label={`Close ${take.label}`} data-tip="Close take" onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); closeTake(take.id); }}><X size={11}/></span></button>)}
           {!takes.length && <span className="take-empty">Results appear here as you run models</span>}
         </div>
       </div>
-      <div className="toolbar-bank ab-bank"><button className="icon-button" disabled={!abReady} aria-label="Switch to the previous take" data-tip={'A/B compare\nSwitch between the last two takes. Alt+B'} onClick={onAB}><ArrowLeftRight size={14}/></button><button className={`icon-button ${matchLoudness ? 'is-active' : ''}`} aria-pressed={matchLoudness} aria-label="Match loudness between takes" data-tip={matchLoudness ? 'Loudness matching on\nTakes play at a similar level so louder does not sound better.' : 'Loudness matching off'} onClick={() => setMatchLoudness(!matchLoudness)}><Volume2 size={14}/></button></div>
       <div className="toolbar-bank view-bank"><button className="icon-button timeline-expand" aria-label={expanded ? 'Restore workspace layout' : 'Expand timeline'} aria-pressed={expanded} data-tip={expanded ? 'Restore layout' : 'Expand timeline'} onClick={toggleExpanded}>{expanded ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
       <div className="toolbar-bank marker-bank"><button className="icon-button" disabled={!duration} aria-label="Add or remove a marker at the playhead" data-tip={'Marker\nM adds or removes one at the playhead. , and . jump between markers. Double-click the ruler to loop a section.'} onClick={() => setMarkers(toggleMarker(markers, transport.snapshot().position, duration))}><Flag size={14}/></button></div>
       <div className="toolbar-bank history-bank"><button className="icon-button" disabled={!historyState.undo} aria-label="Undo" data-tip={'Undo\nCtrl+Z'} onClick={() => travel('undo')}><Undo2 size={14}/></button><button className="icon-button" disabled={!historyState.redo} aria-label="Redo" data-tip={'Redo\nCtrl+Shift+Z or Ctrl+Y'} onClick={() => travel('redo')}><Redo2 size={14}/></button></div>
@@ -249,5 +250,6 @@ export function StemTimeline({ markers, setMarkers, onAB, abReady, matchLoudness
     </div></div>
     {menu && <div className="timeline-context-menu" role="menu" aria-label={`${menu.stem.label} actions`} style={{ left: menu.x, top: menu.y }}><small>{menu.stem.label}{selection ? ` · ${clock(selection.start)} → ${clock(selection.end)}` : ' · whole channel'}</small><button role="menuitem" disabled={!duration || detailBusy || !detailAvailable} onClick={() => { details(menu.stem, selection?.start || 0, selection?.end || duration, false); setMenu(null); }}><ScanSearch size={14}/> Extract details <span>USS Auto</span></button><button role="menuitem" disabled={!duration || detailBusy || !detailAvailable} onClick={() => { details(menu.stem, selection?.start || 0, selection?.end || duration, true); setMenu(null); }}><Crosshair size={14}/> Extract sound…</button><button role="menuitem" disabled={!duration} onClick={() => { remember(); setEdits(previous => ({ ...previous, [menu.stem.id]: splitEdit(previous[menu.stem.id], menu.at, duration) })); setMenu(null); }}><Scissors size={14}/> Split channel <span>{clock(menu.at)}</span></button><button role="menuitem" onClick={() => { remember(); setEdits(previous => { const next = { ...previous }; delete next[menu.stem.id]; return next; }); setMenu(null); }}>Reset channel edits</button><button role="menuitem" onClick={() => { useAsReference(menu.stem); setMenu(null); }}><Mic size={14}/> Use as GuideSep reference</button><button role="menuitem" disabled={exporting} onClick={() => { save(menu.stem.id); setMenu(null); }}><ArrowDownToLine size={14}/> Download channel</button></div>}
     {mixOpen && <MixExportModal items={tracks.map(track => ({ id: track.stem.id, label: track.stem.label, buffer: track.buffer }))} mix={mix} edits={edits} duration={duration} name={sourceName} close={() => setMixOpen(false)} exportFile={exportMixFile}/>}
+    {takeMenu && <div className="timeline-context-menu take-menu" role="menu" aria-label="Take actions" style={{ left: takeMenu.x, top: takeMenu.y }}><button role="menuitem" onClick={() => { closeTake(takeMenu.id); setTakeMenu(null); }}><X size={14}/> Close take</button><button role="menuitem" disabled={takes.length < 2} onClick={() => { closeTake(takeMenu.id, true); setTakeMenu(null); }}>Close other takes</button></div>}
   </section>;
 }

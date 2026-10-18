@@ -26,6 +26,9 @@ export function normalizeGuidance(value = {}, range) {
 }
 export function interpolatedBox(keyframes, time) {
   if (!keyframes.length) return null;
+  // One mark describes a still source and holds. With two or more, the target exists only between the first and last mark.
+  if (keyframes.length === 1) return keyframes[0].box;
+  if (time < keyframes[0].time - 1e-6 || time > keyframes.at(-1).time + 1e-6) return null;
   if (time <= keyframes[0].time) return keyframes[0].box;
   for (let i = 1; i < keyframes.length; i++) if (time <= keyframes[i].time) {
     const a = keyframes[i - 1], b = keyframes[i], t = (time - a.time) / (b.time - a.time);

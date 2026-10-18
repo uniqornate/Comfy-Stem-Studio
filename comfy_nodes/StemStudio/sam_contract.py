@@ -33,6 +33,9 @@ def guidance(value, duration):
     return {'anchors': anchors, 'keyframes': sorted(frames, key=lambda f: f['time']), 'visualOnly': visual_only, 'predictSpans': data.get('predictSpans') is True and not anchors and not visual_only}
 
 def box_at(keyframes, time):
+    # One mark holds (a still source). With two or more the target exists only between the first and last mark.
+    if len(keyframes) == 1: return keyframes[0]['box']
+    if time < keyframes[0]['time'] - 1e-6 or time > keyframes[-1]['time'] + 1e-6: return None
     if time <= keyframes[0]['time']: return keyframes[0]['box']
     for previous, following in zip(keyframes, keyframes[1:]):
         if time <= following['time']:

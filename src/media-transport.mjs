@@ -10,7 +10,7 @@ export class MediaTransport {
     this.video = null; this.context = null; this.tracks = []; this.mix = {};
     this.sources = []; this.gains = new Map(); this.listeners = new Set(); this.events = [];
     this.frame = null; this.generation = 0; this.buffering = false; this.mode = 'original'; this.error = '';
-    this.anchor = null; this.scrubTarget = null; this.master = 1; this.playPending = false; this.selection = null; this.loopLocked = false; this.wantsPlayback = false;
+    this.anchor = null; this.scrubTarget = null; this.playPending = false; this.selection = null; this.loopLocked = false; this.wantsPlayback = false;
   }
   snapshot() {
     if (this.pendingRestore) return { ...this.pendingRestore, playing: false, buffering: false, mode: this.mode, error: this.error };
@@ -64,13 +64,8 @@ export class MediaTransport {
     const anySolo = Object.values(mix).some(value => value.solo);
     for (const [id, gain] of this.gains) {
       const state = mix[id];
-      gain.gain.setTargetAtTime(state && !state.mute && (!anySolo || state.solo) ? state.level * this.master : 0, this.context.currentTime, 0.012);
+      gain.gain.setTargetAtTime(state && !state.mute && (!anySolo || state.solo) ? state.level : 0, this.context.currentTime, 0.012);
     }
-  }
-  // Loudness compensation for A/B comparison; scales every channel without touching the mixer state.
-  setMaster(gain) {
-    this.master = Number.isFinite(gain) ? Math.max(0, Math.min(4, gain)) : 1;
-    if (this.context) this.setMix(this.mix);
   }
   setEdits(edits) { this.edits = edits; if (this.video && !this.video.paused) this.alignAudio(); }
   setMode(mode) {
@@ -92,7 +87,7 @@ export class MediaTransport {
     for (const { stem, buffer } of this.tracks) {
       if (offset >= buffer.duration) continue;
       const gain = ctx.createGain(); const state = this.mix[stem.id];
-      gain.gain.value = state && !state.mute && (!anySolo || state.solo) ? state.level * this.master : 0;
+      gain.gain.value = state && !state.mute && (!anySolo || state.solo) ? state.level : 0;
       gain.connect(ctx.destination); this.gains.set(stem.id, gain);
       if (!this.edits?.[stem.id]) {
         const source = ctx.createBufferSource(); source.buffer = buffer; source.playbackRate.value = rate; source.connect(gain);

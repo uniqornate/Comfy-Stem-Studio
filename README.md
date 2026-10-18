@@ -7,7 +7,7 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 ## Features
 
 - Import a video or an audio file and separate dialogue, music and effects with **MERL MRX (default)**, BandIt v2 or SFC-Locoformer. Pick the model from the icon tiles; hover for its full name and license note.
-- Waveform timeline with shared video/stem transport, mute and solo (Ctrl+click to solo several), zoom, range loop, non-destructive clip trim, split and gain edits, and Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Model takes appear as tabs above the timeline: middle-drag or Ctrl+wheel to scroll them. Alt+B flips between the last two takes with optional loudness matching, so the louder one does not sound better.
+- Waveform timeline with shared video/stem transport, mute and solo (Ctrl+click to solo several), zoom, range loop, non-destructive clip trim, split and gain edits, and Undo/Redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Model takes appear as tabs above the timeline: middle-drag or Ctrl+wheel to scroll them.
 - Extract named sounds with USS/PANNs (AudioSet classes, or All with Auto thresholds) and, experimentally, SAM Audio (text, time examples, visual boxes) on the whole source or on a selected channel range.
 - Experimental GuideSep separation: hum or play a reference and pull the matching instrument from music, on the whole source or on a channel range. Set where the reference starts, or use any extracted channel as the reference.
 - Markers (M) with section loops (double-click the ruler), export of the current mix to WAV or FLAC, batch processing of many files into one folder, a quick source check that suggests a starting model, and a `?` shortcut list.
@@ -26,7 +26,7 @@ Every operation runs as a ComfyUI graph built from the `StemStudio` custom nodes
 ## Install
 
 1. Run `Stem-Studio-Setup.exe` with Stem Studio closed and select your ComfyUI folder.
-2. Review the model packs and licenses, approve the changes and choose Prepare everything. MRX is selected by default; verified existing files are reused.
+2. No ComfyUI yet? Choose "No, install it for me" and setup downloads the official portable build first (about 2 GB, SHA-256 checked). Model files always go into `<ComfyUI>/models/audio_separation`. Review the model packs and licenses, approve the changes and choose Prepare everything. MRX is selected by default; verified existing files are reused.
 3. Allow the setup to install the ComfyUI integration and safely restart an idle ComfyUI.
 4. Open Stem Studio, pick a video, choose a model and press Separate stems (Ctrl+Enter).
 

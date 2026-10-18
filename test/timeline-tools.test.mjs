@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeMarkers, toggleMarker, regionAt, stepMarker, removeMarker } from '../src/markers.mjs';
-import { mixPlan, encodeWav, rmsDb, matchGainDb } from '../src/mixdown.mjs';
+import { mixPlan, encodeWav } from '../src/mixdown.mjs';
 import { analyzeSource, suggestModel } from '../src/source-profile.mjs';
 import { speechLike, musicLike, effectsLike } from '../scripts/synth-signals.mjs';
 
@@ -44,13 +44,6 @@ test('WAV encoder writes a valid header and clamps samples', () => {
   const view = new DataView(encodeWav(samples, 8000, 16).buffer);
   assert.deepEqual([1, 2, 3, 4, 5].map(i => view.getInt16(44 + i * 2, true)), [32767, -32768, 32767, -32768, 0]);
   assert.throws(() => encodeWav(samples, 8000, 8), /16, 24/);
-});
-test('loudness matching compensates a quieter take within a safe limit', () => {
-  const loud = Float32Array.from({ length: 4000 }, (_, i) => 0.5 * Math.sin(i / 7)), quiet = loud.map(value => value / 4);
-  assert.ok(Math.abs(rmsDb([loud]) - rmsDb([quiet]) - 12.04) < 0.1);
-  assert.ok(Math.abs(matchGainDb(rmsDb([loud]), rmsDb([quiet])) - 12) < 0.01);
-  assert.equal(matchGainDb(-10, -40), 12); assert.equal(matchGainDb(-40, -10), -12);
-  assert.equal(matchGainDb(-10, -120), 0); assert.equal(rmsDb([new Float32Array(100)]), -120);
 });
 test('source profiler tells speech, sustained music and effect bursts apart and suggests a model', () => {
   const rate = 44100;
