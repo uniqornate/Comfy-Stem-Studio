@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { channelEdit, fitEdit, splitEdit, trimEdit, gainEdit, audibleSegments } from '../src/clip-edits.mjs';
+import { channelEdit, fitEdit, splitEdit, trimEdit, moveEdit, gainEdit, audibleSegments } from '../src/clip-edits.mjs';
 import { stemWorkflow } from '../electron/separation.mjs';
 import { AudioRenderer, editWorkflow } from '../electron/audio-render.mjs';
 import { samConfig } from '../electron/sam-manager.mjs';
@@ -63,4 +63,42 @@ test('edited export submits native LoadAudio/EditAudio/SaveAudio through SDK and
   const renderer=new AudioRenderer(root,{makeClient:()=>client,fetch:async()=>new Response(JSON.stringify({StemStudioEditAudio:{}}))});
   const path=await renderer.render({comfyUrl:'http://127.0.0.1:8188',proxyUrl:'http://127.0.0.1:8189'},'/approved/file.flac',gainEdit(undefined,1,2,-6,10));
   assert.equal(await readFile(path,'utf8'),'edited-native-fixture'); assert.equal(submitted['2'].class_type,'StemStudioEditAudio'); assert.equal(renderer.active,false);
+});
+
+test('a clip can slide along the timeline, stopping at neighbours and the ends, and keeps its source range', () => {
+  const split = splitEdit(undefined, 5, 10), left = 'full-L-5.000000';
+  const gap = trimEdit(trimEdit(split, left, 'end', 2, 10), 'full-R-5.000000', 'start', 6, 10);
+  assert.deepEqual(gap.clips.map(clip => [clip.start, clip.end]), [[0, 2], [6, 10]]);
+  assert.deepEqual(moveEdit(gap, left, 3, 10).clips[0], { id: left, start: 0, end: 2, offset: 3 });
+  assert.equal(moveEdit(gap, left, 99, 10).clips[0].offset, 4);
+  assert.equal(moveEdit(gap, left, -5, 10).clips[0].offset, undefined);
+  assert.equal(moveEdit(moveEdit(gap, left, 3, 10), left, 0, 10).clips[0].offset, undefined);
+  const wedged = splitEdit(splitEdit(undefined, 3, 10), 6, 10);
+  assert.equal(moveEdit(wedged, wedged.clips[1].id, 3.5, 10).clips[1].offset, undefined);
+  assert.equal(moveEdit(gap, 'missing', 1, 10).clips.length, 2);
+});
+test('moved clips split, trim and play at their new place while reading the right part of the audio', () => {
+  const base = trimEdit(trimEdit(splitEdit(undefined, 5, 10), 'full-R-5.000000', 'start', 8, 10), 'full-L-5.000000', 'end', 2, 10);
+  assert.deepEqual(base.clips.map(clip => [clip.start, clip.end]), [[0, 2], [8, 10]]);
+  const moved = moveEdit(base, base.clips[0].id, 3, 10);
+  assert.deepEqual(moved.clips[0], { id: base.clips[0].id, start: 0, end: 2, offset: 3 });
+  const split = splitEdit(moved, 4, 10);
+  assert.deepEqual(split.clips.slice(0, 2).map(clip => [clip.start, clip.end, clip.offset]), [[0, 1, 3], [1, 2, 3]]);
+  const trimmed = trimEdit(moved, base.clips[0].id, 'start', 4, 10);
+  assert.deepEqual([trimmed.clips[0].start, trimmed.clips[0].offset], [1, 3]);
+  assert.equal(trimEdit(moved, base.clips[0].id, 'end', 99, 10).clips[0].end, 5); // timeline end of the next clip, minus the shift
+  assert.deepEqual(audibleSegments(moved, 10, 0, 10).slice(0, 1), [{ start: 3, end: 5, gain: 1, source: 0 }]);
+  assert.deepEqual(audibleSegments(moved, 10, 4, 10).slice(0, 1), [{ start: 4, end: 5, gain: 1, source: 1 }]);
+  const gained = gainEdit(moved, 4, 5, 6, 10);
+  assert.deepEqual(audibleSegments(gained, 10, 0, 6).map(segment => [segment.start, segment.end, Math.round(segment.gain * 100) / 100, segment.source]), [[3, 4, 1, 0], [4, 5, 2, 1]]);
+});
+test('offsets are validated and fitted to a shorter timeline', () => {
+  assert.throws(() => channelEdit({ clips: [{ id: 'a', start: 0, end: 4, offset: 8 }], gains: [] }, 10), /overlapping/);
+  assert.throws(() => channelEdit({ clips: [{ id: 'a', start: 0, end: 4, offset: -1 }], gains: [] }, 10), /overlapping/);
+  assert.throws(() => channelEdit({ clips: [{ id: 'a', start: 0, end: 4, offset: NaN }], gains: [] }, 10), /position/);
+  assert.throws(() => channelEdit({ clips: [{ id: 'a', start: 0, end: 4, offset: 2 }, { id: 'b', start: 3, end: 5 }], gains: [] }, 10), /overlapping/);
+  const edit = { clips: [{ id: 'a', start: 0, end: 4, offset: 4 }], gains: [] };
+  assert.deepEqual(fitEdit(edit, 6).clips, [{ id: 'a', start: 0, end: 2, offset: 4 }]);
+  assert.deepEqual(fitEdit(edit, 3).clips, []);
+  assert.deepEqual(channelEdit({ clips: [{ id: 'a', start: 0, end: 4, offset: 0 }], gains: [] }, 10).clips, [{ id: 'a', start: 0, end: 4 }]);
 });

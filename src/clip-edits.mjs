@@ -1,4 +1,9 @@
 const finite = value => typeof value === 'number' && Number.isFinite(value);
+const offsetOf = clip => clip.offset || 0;
+export const placedStart = clip => clip.start + offsetOf(clip);
+export const placedEnd = clip => clip.end + offsetOf(clip);
+// A clip plays the source range [start, end] and sits on the timeline at [start + offset, end + offset].
+// Clips never overlap on the timeline and stay inside it; gain regions are always in timeline time.
 export function channelEdit(value, duration) {
   if (!finite(duration) || duration < 0) throw Error('Invalid channel duration.');
   if (!value) return { clips: duration ? [{ id: 'full', start: 0, end: duration }] : [], gains: [] };
@@ -6,10 +11,14 @@ export function channelEdit(value, duration) {
   function ranges(items, gains) {
     let end = -1;
     return items.map((item, index) => {
-      if (!item || !finite(item.start) || !finite(item.end) || item.start < 0 || item.end <= item.start || item.end > duration + .001 || item.start < end - .000001) throw Error('Invalid or overlapping clip ranges.');
-      end = item.end;
+      if (!item || !finite(item.start) || !finite(item.end) || item.start < 0 || item.end <= item.start || item.end > duration + .001) throw Error('Invalid or overlapping clip ranges.');
+      const offset = !gains && item.offset !== undefined ? item.offset : 0;
+      if (!finite(offset) || Math.abs(offset) > 864000) throw Error('Invalid clip position.');
+      const start = item.start + offset, finish = item.end + offset;
+      if (start < -.000001 || finish > duration + .001 || start < end - .000001) throw Error('Invalid or overlapping clip ranges.');
+      end = finish;
       if (gains && (!finite(item.db) || item.db < -60 || item.db > 24)) throw Error('Gain must be between -60 and +24 dB.');
-      return gains ? { start: item.start, end: item.end, db: item.db } : { id: String(item.id || index).slice(0, 100), start: item.start, end: item.end };
+      return gains ? { start: item.start, end: item.end, db: item.db } : { id: String(item.id || index).slice(0, 100), start: item.start, end: item.end, ...(Math.abs(offset) > 1e-6 ? { offset } : {}) };
     });
   }
   return { clips: ranges(value.clips, false), gains: ranges(value.gains, true) };
@@ -17,14 +26,31 @@ export function channelEdit(value, duration) {
 export function splitEdit(value, at, duration) {
   const edit = fitEdit(value, duration);
   if (edit.clips.length >= 256) return edit;
-  return { ...edit, clips: edit.clips.flatMap(clip => at > clip.start + .02 && at < clip.end - .02 ? [{ ...clip, id: clip.id.slice(0,60) + '-L-' + at.toFixed(6), end: at }, { ...clip, id: clip.id.slice(0,60) + '-R-' + at.toFixed(6), start: at }] : [clip]) };
+  return { ...edit, clips: edit.clips.flatMap(clip => {
+    if (at <= placedStart(clip) + .02 || at >= placedEnd(clip) - .02) return [clip];
+    const point = at - offsetOf(clip);
+    return [{ ...clip, id: clip.id.slice(0, 60) + '-L-' + at.toFixed(6), end: point }, { ...clip, id: clip.id.slice(0, 60) + '-R-' + at.toFixed(6), start: point }];
+  }) };
 }
+// `at` is a timeline time. The edge moves on the timeline; the source range follows.
 export function trimEdit(value, id, edge, at, duration) {
   const edit = fitEdit(value, duration), index = edit.clips.findIndex(clip => clip.id === id);
   if (index < 0) return edit;
-  const clip = edit.clips[index];
-  if (edge === 'start') clip.start = Math.max(edit.clips[index - 1]?.end || 0, Math.min(clip.end - .02, at));
-  else clip.end = Math.min(edit.clips[index + 1]?.start ?? duration, Math.max(clip.start + .02, at));
+  const clip = { ...edit.clips[index] }, offset = offsetOf(clip), before = edit.clips[index - 1], after = edit.clips[index + 1];
+  if (edge === 'start') clip.start = Math.max(before ? placedEnd(before) : 0, offset, Math.min(placedEnd(clip) - .02, at)) - offset;
+  else clip.end = Math.min(after ? placedStart(after) : duration, duration + offset, Math.max(placedStart(clip) + .02, at)) - offset;
+  edit.clips[index] = clip;
+  return channelEdit(edit, duration);
+}
+// Slides a clip along the timeline so that it starts at `target`, stopping at its neighbours and at the ends.
+export function moveEdit(value, id, target, duration) {
+  const edit = fitEdit(value, duration), index = edit.clips.findIndex(clip => clip.id === id);
+  if (index < 0) return edit;
+  const clip = { ...edit.clips[index] }, before = edit.clips[index - 1], after = edit.clips[index + 1], width = clip.end - clip.start;
+  const low = before ? placedEnd(before) : 0, high = Math.max(low, (after ? placedStart(after) : duration) - width);
+  const start = Math.max(low, Math.min(high, target)), offset = Math.round((start - clip.start) * 1000) / 1000;
+  if (Math.abs(offset) > 1e-6) clip.offset = offset; else delete clip.offset;
+  edit.clips[index] = clip;
   return channelEdit(edit, duration);
 }
 export function gainEdit(value, start, end, db, duration) {
@@ -37,16 +63,18 @@ export function gainAt(value, at) { return value?.gains?.find(region => at >= re
 export function fitEdit(value, duration) {
   if (!value) return channelEdit(undefined, duration);
   const edit = channelEdit(value, 864000);
-  const fit = ranges => ranges.map(range => ({ ...range, end: Math.min(range.end, duration) })).filter(range => range.end > range.start);
-  return channelEdit({ clips: fit(edit.clips), gains: fit(edit.gains) }, duration);
+  const clips = edit.clips.map(clip => ({ ...clip, end: Math.min(clip.end, duration - offsetOf(clip)) })).filter(clip => clip.end > clip.start && placedStart(clip) < duration);
+  const gains = edit.gains.map(range => ({ ...range, end: Math.min(range.end, duration) })).filter(range => range.end > range.start);
+  return channelEdit({ clips, gains }, duration);
 }
+// Playable pieces between two timeline times. `source` is where in the audio the piece starts (omitted when it equals `start`).
 export function audibleSegments(value, duration, offset = 0, until = duration) {
-  const edit = channelEdit(value, Math.max(duration, ...(value?.clips || []).map(clip => clip.end), ...(value?.gains || []).map(gain => gain.end))), result = [];
+  const edit = channelEdit(value, Math.max(duration, ...(value?.clips || []).map(clip => clip.end + offsetOf(clip)), ...(value?.gains || []).map(gain => gain.end))), result = [];
   for (const clip of edit.clips) {
-    const start = Math.max(clip.start, offset), end = Math.min(clip.end, until);
+    const shift = offsetOf(clip), start = Math.max(placedStart(clip), offset), end = Math.min(placedEnd(clip), until);
     if (end <= start) continue;
-    const points = [...new Set([start, end, ...edit.gains.flatMap(gain => [gain.start, gain.end]).filter(at => at > start && at < end)])].sort((a,b) => a-b);
-    for (let i=0; i<points.length-1; i++) result.push({ start: points[i], end: points[i+1], gain: 10 ** (gainAt(edit, (points[i]+points[i+1])/2) / 20) });
+    const points = [...new Set([start, end, ...edit.gains.flatMap(gain => [gain.start, gain.end]).filter(at => at > start && at < end)])].sort((a, b) => a - b);
+    for (let i = 0; i < points.length - 1; i++) result.push({ start: points[i], end: points[i + 1], gain: 10 ** (gainAt(edit, (points[i] + points[i + 1]) / 2) / 20), ...(shift ? { source: points[i] - shift } : {}) });
   }
   return result;
 }

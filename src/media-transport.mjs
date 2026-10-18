@@ -98,7 +98,7 @@ export class MediaTransport {
         const source = ctx.createBufferSource(), envelope = ctx.createGain(); source.buffer = buffer; source.playbackRate.value = rate;
         envelope.gain.value = segment.gain; source.connect(envelope); envelope.connect(gain);
         source.onended = () => envelope.disconnect();
-        source.start(at + (segment.start - offset) / rate, segment.start, segment.end - segment.start); this.sources.push(source);
+        source.start(at + (segment.start - offset) / rate, segment.source ?? segment.start, segment.end - segment.start); this.sources.push(source);
       }
     }
   }

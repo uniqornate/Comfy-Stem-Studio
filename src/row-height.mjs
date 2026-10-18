@@ -1,5 +1,5 @@
 // Channel row height in pixels, and the 0.1 to 1 scale the knob uses.
-export const ROW_MIN = 58;
+export const ROW_MIN = 28;
 export const ROW_MAX = 260;
 export const ROW_DEFAULT = 68;
 export const clampRow = px => Math.round(Math.max(ROW_MIN, Math.min(ROW_MAX, Number.isFinite(px) ? px : ROW_DEFAULT)));

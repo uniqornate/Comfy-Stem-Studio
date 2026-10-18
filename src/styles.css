@@ -315,3 +315,28 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .delete-confirm p{margin:6px 0 10px;font-size:10px;line-height:1.45;color:var(--muted)}
 .delete-confirm div{display:flex;justify-content:flex-end;gap:8px}
 .delete-confirm button{padding:6px 12px;font-size:10.5px;min-height:0}
+
+/* Clip move grip, thinner channels with compact headers */
+.studio-workspace .waveform-clip{height:100%}
+.studio-workspace .waveform-lane{padding:calc(var(--row,var(--row-height,68px)) * .07) 0;container-type:size;container-name:lane}
+.studio-workspace .track-controls{padding:calc(var(--row,var(--row-height,68px)) * .08) 10px;container-type:size;container-name:ctl}
+.clip-grip{position:absolute;top:0;left:0;right:0;height:15px;z-index:2;display:flex;align-items:center;padding-left:8px;cursor:grab;touch-action:none}
+.clip-grip:hover{background:color-mix(in srgb,var(--track) 16%,transparent)}
+.clip-grip:active{cursor:grabbing}
+.clip-grip span{font-size:9px;opacity:.75;white-space:nowrap;overflow:hidden;text-shadow:0 1px 3px #211927;pointer-events:none}
+.track-head{display:block;min-width:0}
+@container lane (max-height:46px){.clip-grip{height:9px}.clip-grip span{display:none}}
+@container ctl (max-height:57px){
+  .track-head{display:flex;align-items:center;gap:6px;height:100%}
+  .track-name{flex:1;min-width:0;gap:4px;margin:0}
+  .track-name .icon-button{width:20px;height:20px}
+  .track-mix{margin:0;gap:4px;flex-shrink:0}
+  .track-mix button{width:20px;height:20px}
+  .track-mix input{width:46px}
+  .track-mix small{display:none}
+}
+@container ctl (max-height:41px){
+  .track-mix input,.track-name .icon-button,.track-number,.group-fold{display:none}
+  .track-mix button{width:18px;height:18px;font-size:9px}
+}
+.waveform-clip .clip-edge{z-index:3}

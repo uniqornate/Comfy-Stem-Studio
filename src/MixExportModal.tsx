@@ -18,7 +18,7 @@ export async function renderMix(items: Item[], mix: Record<string, { mute: boole
     for (const segment of entry.segments) {
       const source = ctx.createBufferSource(), envelope = ctx.createGain();
       source.buffer = buffer; envelope.gain.value = segment.gain; source.connect(envelope); envelope.connect(level);
-      source.start(segment.start, segment.start, segment.end - segment.start);
+      source.start(segment.start, segment.source ?? segment.start, segment.end - segment.start);
     }
   }
   const rendered = (await ctx.startRendering()).getChannelData(0).slice();

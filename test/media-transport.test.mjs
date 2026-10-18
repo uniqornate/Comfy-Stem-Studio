@@ -152,3 +152,13 @@ test('scrubbing respects a locked loop range and a failed video clears the pendi
   assert.equal(transport.snapshot().position, 2);
   transport.dispose();
 });
+
+test('a moved clip is scheduled at its timeline position but reads from its own part of the audio', async () => {
+  const { transport, video } = fixture();
+  transport.setEdits({ a: { clips: [{ id: 'x', start: 1, end: 3, offset: 4 }], gains: [] } });
+  video.currentTime = 6; await transport.play();
+  assert.deepEqual(transport.sources[0].started, [20, 2, 1]); // timeline 6 is source 2, and the clip ends at timeline 7
+  transport.pause(); video.currentTime = 0; await transport.play();
+  assert.deepEqual(transport.sources[0].started, [25, 1, 2]); // the clip starts 5 s after the playhead and reads from source 1
+  transport.dispose();
+});

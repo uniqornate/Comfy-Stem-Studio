@@ -2,6 +2,7 @@
 import json
 import math
 
+
 def parse_edits(raw, duration):
     value = json.loads(raw) if isinstance(raw, str) else raw
     if not value:
@@ -12,24 +13,39 @@ def parse_edits(raw, duration):
         previous = -1
         for item in value[key]:
             start, end = item['start'], item['end']
-            if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in [start, end]) or start < 0 or end <= start or end > 864000 or start < previous - .000001:
+            offset = item.get('offset', 0) if key == 'clips' else 0
+            if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in [start, end, offset]) or start < 0 or end <= start or end > 864000 or abs(offset) > 864000:
                 raise ValueError('Invalid clip range')
-            previous = end
+            # Clips sit at [start + offset, end + offset] on the timeline and may not overlap there.
+            if start + offset < -.000001 or end + offset > 864000 or start + offset < previous - .000001:
+                raise ValueError('Invalid clip range')
+            previous = end + offset
             if key == 'gains' and (not isinstance(item['db'], (int, float)) or not math.isfinite(item['db']) or not -60 <= item['db'] <= 24):
                 raise ValueError('Invalid clip gain')
     return value
 
+
 def edit_array(wave, rate, raw):
     import numpy as np
-    edit = parse_edits(raw, wave.shape[-1] / rate)
+    length = wave.shape[-1]
+    edit = parse_edits(raw, length / rate)
     if edit is None:
         return wave
-    envelope = np.zeros(wave.shape[-1], dtype=np.float32)
+    result = np.zeros_like(wave)
     for clip in edit['clips']:
-        envelope[round(clip['start'] * rate):round(clip['end'] * rate)] = 1
+        source = max(0, round(clip['start'] * rate))
+        stop = min(length, round(clip['end'] * rate))
+        target = round((clip['start'] + clip.get('offset', 0)) * rate)
+        if target < 0:
+            source, target = source - target, 0
+        count = min(stop - source, length - target)
+        if count > 0:
+            result[..., target:target + count] = wave[..., source:source + count]
+    envelope = np.ones(length, dtype=np.float32)
     for region in edit['gains']:
         envelope[round(region['start'] * rate):round(region['end'] * rate)] *= 10 ** (region['db'] / 20)
-    return wave * envelope
+    return result * envelope
+
 
 class StemStudioEditAudio:
     @classmethod
@@ -38,6 +54,7 @@ class StemStudioEditAudio:
     RETURN_TYPES = ('AUDIO',)
     FUNCTION = 'render'
     CATEGORY = 'Stem Studio'
+
     def render(self, audio, edits_json='{}'):
         import torch
         wave = audio['waveform']

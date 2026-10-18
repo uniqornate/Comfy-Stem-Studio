@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-39 | WAITING_USER | Claude | Clips can be moved sideways within their channel; channels can be thinner (28 px) with compact headers (0.12.7 source). | User moves clips, plays, exports a mix and a video, and extracts from an edited channel to confirm they match; needs integration sync + ComfyUI restart for the node change. |
 | W-20261017-38 | WAITING_USER | Claude | Smoother preview while choosing a range, channel deletion, channel row heights (Alt + knob, per-channel grip) (0.12.6 source). | User drags ranges on a long video, deletes a channel with and without detail channels, and resizes rows. |
 | W-20261017-37 | WAITING_USER | Claude | Space no longer toggles playback while typing or with a dialog open; range selection (brush and Shift) scrubs the preview video (0.12.5 source). | User checks typing a space in the brush prompt and the preview while dragging a range. |
 | W-20261017-36 | WAITING_USER | Claude | Brush tool phase 1: prompt-painted sound effects into a new channel with Stable Audio 3 Small-SFX via native ComfyUI nodes (0.12.4 source, not packaged). | User tries the brush in `npm run dev` with ComfyUI running, downloads the sound model from the brush dialog and reports quality and any ComfyUI node mismatch. |
@@ -58,6 +59,16 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-39: Clip move and thin channels
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-19T03:00:00+03:00 | Work: W-20261017-39
+  Change: Clip edits gained an optional timeline `offset` (src/clip-edits.mjs: moveEdit, placedStart/placedEnd, offset-aware split, trim, fit, validation and audibleSegments with `source`). Dragging a clip's header strip moves it; it stops at neighbours and the timeline ends, is undoable like other edits, and range picking (Shift or brush) still works over clips. Playback, mix export and the Python StemStudioEditAudio node (comfy_nodes/StemStudio/audio_edits.py) honour the offset. Waveform clips now fill the row height (they were fixed at 58 px, so taller rows did not scale the waveform). Rows may be as thin as 28 px (was 58): CSS container queries compact the header (mute, solo and a short slider, then only name, M and S) and hide the clip label; padding scales with the row.
+  Validation: TypeScript, Vite build, 166 JS tests and 12 Python tests pass, with new tests for moving, offset trimming, splitting, validation, fitting, playback scheduling and the Python render. Not run in the app.
+  Limits: Moves are blocked by neighbours rather than pushing them. Below 41 px the parent fold arrow and level slider are hidden. A clip cannot leave the timeline. Old projects load unchanged (no offsets).
+  Artifacts: src/{clip-edits,media-transport,mixdown}.mjs, src/{StemTimeline,MixExportModal}.tsx, src/{row-height}.mjs, src/styles.css, electron/projects.mjs, comfy_nodes/StemStudio/audio_edits.py, tests, docs.
+  Next: User verifies; restart ComfyUI after the node sync.
 
 ### W-20261017-38: Range preview, channel delete, row heights
 
