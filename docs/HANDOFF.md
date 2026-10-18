@@ -14,6 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
+| W-20261017-38 | WAITING_USER | Claude | Smoother preview while choosing a range, channel deletion, channel row heights (Alt + knob, per-channel grip) (0.12.6 source). | User drags ranges on a long video, deletes a channel with and without detail channels, and resizes rows. |
 | W-20261017-37 | WAITING_USER | Claude | Space no longer toggles playback while typing or with a dialog open; range selection (brush and Shift) scrubs the preview video (0.12.5 source). | User checks typing a space in the brush prompt and the preview while dragging a range. |
 | W-20261017-36 | WAITING_USER | Claude | Brush tool phase 1: prompt-painted sound effects into a new channel with Stable Audio 3 Small-SFX via native ComfyUI nodes (0.12.4 source, not packaged). | User tries the brush in `npm run dev` with ComfyUI running, downloads the sound model from the brush dialog and reports quality and any ComfyUI node mismatch. |
 | W-20261017-35 | WAITING_USER | Claude | A/B compare removed; closable take tabs; SAM box only between its marks (UI and node); SAM sound-example span bar; ComfyUI auto-install in setup; model location rule documented; brush-tool model research (0.12.3 source, not packaged). | User checks each item in `npm run dev`; setup changes need an installer build and a real run. |
@@ -57,6 +58,16 @@ changes before registering or editing work.
 1. User closes Stem Studio, upgrades with release/Stem-Studio-Setup.exe (0.10.0) and allows the integration update plus restart of idle ComfyUI. Select the actual local installation with standard input/output directories. Import a short video, separate it, change mix/range/layout, close and reopen to verify last-project recovery. Confirm source files under input/StemStudio and native stems/project sidecar under output/StemStudio. Test Projects new/open/recent/rename/Save as/relink and short USS All using the updated prefix input. Previous unsaved 0.9.0 work cannot be reconstructed after the old app closes. Save as shares native media references, not a portable media archive. Real UI, service, file-path override, SAM and playback/inference acceptance remain user-owned; agent must not perform live testing independently.
 
 ## CHRONOLOGICAL LOG
+
+### W-20261017-38: Range preview, channel delete, row heights
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-19T01:30:00+03:00 | Work: W-20261017-38
+  Change: Range selection already scrubbed the video, but every selection update re-rendered the app and lanes, which kept the video from finishing seeks. The selection is now pushed to the app at most about 11 times per second while dragging (exact value on release); scrubbing itself is immediate and coalesced as for the playhead. Channels can be deleted from the right-click menu with a confirmation that names the detail channels that go too (src/channels.mjs, removeChannels); an emptied take disappears; files on disk are untouched; stale edits are pruned. Row heights: the waveform knob changes channel row height while Alt is held (src/row-height.mjs, 58 to 260 px, default 68), and a grip on each channel's bottom edge sizes that channel alone (double-click resets); both persist in the take view and are validated in projects.mjs. The window menu bar is now permanently hidden so Alt cannot reveal it.
+  Validation: TypeScript, Vite build, 162 JS tests and 10 Python tests pass, including tests for row-height mapping and channel removal. Not run in the app.
+  Limits: Channel deletion has no undo. Rows below 58 px are not allowed because the mute, solo and level controls need that space. Smoothness of range scrubbing was inferred from the render cost and is not measured.
+  Artifacts: src/{row-height,channels}.mjs, src/{StemTimeline,WaveformKnob,main}.tsx, src/styles.css, src/types.ts, electron/{projects,main}.mjs, test/channels-rows.test.mjs.
+  Next: User verifies.
 
 ### W-20261017-37: Key conflicts and range scrubbing
 

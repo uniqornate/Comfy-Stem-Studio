@@ -277,7 +277,7 @@ app.whenReady().then(async () => {
     sources.set(token, path);
     return { name: path.split(/[\\/]/).pop(), size: info.size, url: `app-media://source/${token}` };
   });
-  window = new BrowserWindow({ width: 1360, height: 920, minWidth: 1000, minHeight: 720, backgroundColor: '#211927', title: 'Stem Studio', autoHideMenuBar: true,
+  window = new BrowserWindow({ width: 1360, height: 920, minWidth: 1000, minHeight: 720, backgroundColor: '#211927', title: 'Stem Studio', autoHideMenuBar: false,
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
   window.on('close', event => {
     if (allowClose || !projectReady || rendererGone || window.webContents.isDestroyed()) return;
@@ -286,6 +286,7 @@ app.whenReady().then(async () => {
   });
   window.webContents.on('render-process-gone', () => { rendererGone = true; });
   window.webContents.on('did-finish-load', () => { rendererGone = false; });
+  window.setMenuBarVisibility(false); // Alt is used by the app and must not reveal a menu bar.
   window.webContents.setWindowOpenHandler(({ url }) => { if (['https://huggingface.co/facebook/sam-audio-small-tv', 'https://huggingface.co/facebook/sam-audio-large-tv', 'https://huggingface.co/settings/tokens', 'https://huggingface.co/YutongCooper/GuideSep-v1', 'https://huggingface.co/facebook/pe-av-large', 'https://github.com/facebookresearch/sam-audio/blob/main/LICENSE'].includes(url)) void shell.openExternal(url); return { action: 'deny' }; });
   window.webContents.on('will-navigate', event => event.preventDefault());
   if (!app.isPackaged && process.argv.includes('--dev')) window.loadURL('http://127.0.0.1:5173');
