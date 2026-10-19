@@ -377,3 +377,7 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .studio-workspace .waveform-lane{content-visibility:auto;contain-intrinsic-block-size:auto var(--row,var(--row-height,68px))}
 .is-sizing .waveform-clip svg{visibility:hidden}
 .is-sizing .waveform-clip,.is-sizing .waveform-lane,.is-sizing .track-controls{transition:none}
+
+/* Meter bar scales instead of clipping, and its toggle matches the other tool buttons */
+.channel-meter i{width:100%;transform-origin:left;transform:scaleX(0);clip-path:none;background:var(--track)}
+.meter-bank .icon-button.is-active{color:var(--yellow);background:#f2ff5918}

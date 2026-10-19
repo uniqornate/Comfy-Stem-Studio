@@ -8,7 +8,7 @@ export class MediaTransport {
     this.requestFrame = options.requestFrame || (callback => requestAnimationFrame(callback));
     this.cancelFrame = options.cancelFrame || (id => cancelAnimationFrame(id));
     this.video = null; this.context = null; this.tracks = []; this.mix = {};
-    this.sources = []; this.gains = new Map(); this.meters = new Map(); this.listeners = new Set(); this.events = [];
+    this.sources = []; this.gains = new Map(); this.meters = new Map(); this.metering = false; this.listeners = new Set(); this.events = [];
     this.frame = null; this.generation = 0; this.buffering = false; this.mode = 'original'; this.error = '';
     this.anchor = null; this.scrubTarget = null; this.playPending = false; this.selection = null; this.loopLocked = false; this.wantsPlayback = false;
   }
@@ -67,6 +67,17 @@ export class MediaTransport {
       gain.gain.setTargetAtTime(state && !state.mute && (!anySolo || state.solo) ? state.level : 0, this.context.currentTime, 0.012);
     }
   }
+  // Analysers cost audio-thread time for every channel, so they exist only while metering is switched on.
+  attachMeter(id, gain) {
+    if (!this.metering || !this.context?.createAnalyser || this.meters.has(id)) return;
+    const analyser = this.context.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0; gain.connect(analyser);
+    this.meters.set(id, { analyser, data: new Float32Array(analyser.fftSize) });
+  }
+  setMetering(on) {
+    this.metering = !!on;
+    if (this.metering) this.gains.forEach((gain, id) => this.attachMeter(id, gain));
+    else { this.meters.forEach(({ analyser }) => { try { analyser.disconnect(); } catch {} }); this.meters.clear(); }
+  }
   // Peak of the last ~23 ms of a channel after its fader and mute, as a linear level. 0 when it is not playing.
   level(id) {
     const meter = this.meters.get(id); if (!meter) return 0;
@@ -96,7 +107,7 @@ export class MediaTransport {
       const gain = ctx.createGain(); const state = this.mix[stem.id];
       gain.gain.value = state && !state.mute && (!anySolo || state.solo) ? state.level : 0;
       gain.connect(ctx.destination); this.gains.set(stem.id, gain);
-      if (ctx.createAnalyser) { const analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0; gain.connect(analyser); this.meters.set(stem.id, { analyser, data: new Float32Array(analyser.fftSize) }); }
+      this.attachMeter(stem.id, gain);
       if (!this.edits?.[stem.id]) {
         const source = ctx.createBufferSource(); source.buffer = buffer; source.playbackRate.value = rate; source.connect(gain);
         if (this.loopLocked && this.selection) source.start(at, offset, Math.max(0, this.selection.end - offset)); else source.start(at, offset);

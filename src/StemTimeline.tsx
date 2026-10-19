@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, Flag, Layers, Mic, Paintbrush, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
+import { Activity, ArrowDownToLine, Flag, Layers, Mic, Paintbrush, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
 import { fitEdit as channelEdit, splitEdit, trimEdit, moveEdit, placedStart, gainEdit, gainAt, type ChannelEdit } from './clip-edits.mjs';
 import { pointerTime } from './timeline-geometry.mjs';
 import { groupedTracks, initialMix } from './detail-groups.mjs';
@@ -141,20 +141,35 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
   useEffect(() => { setEdits(previous => { const keep = Object.fromEntries(Object.entries(previous).filter(([id]) => stems.some(stem => stem.id === id))); return Object.keys(keep).length === Object.keys(previous).length ? previous : keep; }); }, [stems.map(stem => stem.id).join(',')]);
   // The playhead moves through a CSS variable, so playback never re-renders the track rows.
   useEffect(() => transport.subscribe(state => section.current?.style.setProperty('--playhead', String(state.duration ? Math.min(100, state.position / state.duration * 100) : 0))), [transport]);
-  // Level meters read the analysers the transport taps after each channel's fader, straight into the DOM while playing.
+  // Level meters are optional (a toolbar toggle) and light: about 20 reads per second, only for rows in view, one
+  // transform per bar. The transport creates analysers only while metering is on.
+  const [metering, setMetering] = useState(() => { try { return localStorage.getItem('channelMeters') !== 'off'; } catch { return true; } });
+  useEffect(() => { transport.setMetering(metering); try { localStorage.setItem('channelMeters', metering ? 'on' : 'off'); } catch {} }, [metering, transport]);
   useEffect(() => {
     const root = section.current; if (!root) return;
-    const items = [...root.querySelectorAll<HTMLElement>('.channel-meter')].map(el => ({ id: el.dataset.meter!, bar: el.firstElementChild as HTMLElement, text: root.querySelector<HTMLElement>(`[data-db="${CSS.escape(el.dataset.meter!)}"]`), shown: 0, label: '\u0000' }));
-    const draw = (item: (typeof items)[number], fraction: number) => { item.bar.style.clipPath = `inset(0 ${((1 - fraction) * 100).toFixed(1)}% 0 0)`; const label = fraction > 0.01 ? String(Math.round(fraction * 60 - 60)) : ''; if (item.text && item.label !== label) { item.text.textContent = label; item.label = label; } };
-    if (!playing) { items.forEach(item => draw(item, 0)); return; }
-    let frame = 0;
-    const tick = () => {
-      for (const item of items) { const level = transport.level(item.id), db = level > 0.00001 ? 20 * Math.log10(level) : -120; item.shown = Math.max(Math.max(0, Math.min(1, (db + 60) / 60)), item.shown - 0.03); draw(item, item.shown); }
+    const items = [...root.querySelectorAll<HTMLElement>('.channel-meter')].map(el => ({ el, id: el.dataset.meter!, bar: el.firstElementChild as HTMLElement, text: root.querySelector<HTMLElement>(`[data-db="${CSS.escape(el.dataset.meter!)}"]`), shown: 0, label: '\u0000', visible: true, hot: false }));
+    const draw = (item: (typeof items)[number], fraction: number) => {
+      item.bar.style.transform = `scaleX(${fraction.toFixed(3)})`;
+      const hot = fraction > 0.9; if (hot !== item.hot) { item.hot = hot; item.bar.style.background = hot ? '#ff5d5d' : ''; }
+      const label = fraction > 0.01 ? String(Math.round(fraction * 60 - 60)) : ''; if (item.text && item.label !== label) { item.text.textContent = label; item.label = label; }
+    };
+    if (!playing || !metering) { items.forEach(item => draw(item, 0)); return; }
+    const observer = new IntersectionObserver(entries => { for (const entry of entries) { const item = items.find(candidate => candidate.el === entry.target); if (item) item.visible = entry.isIntersecting; } }, { root: scroll.current });
+    items.forEach(item => observer.observe(item.el));
+    let frame = 0, last = 0;
+    const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
+      if (now - last < 50) return;
+      const elapsed = Math.min(0.2, (now - last) / 1000); last = now;
+      for (const item of items) {
+        if (!item.visible) continue;
+        const level = transport.level(item.id), db = level > 0.00001 ? 20 * Math.log10(level) : -120;
+        item.shown = Math.max(Math.max(0, Math.min(1, (db + 60) / 60)), item.shown - elapsed * 0.9); draw(item, item.shown);
+      }
     };
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [playing, tracks, collapsed, transport]);
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [playing, metering, tracks, collapsed, transport]);
   useEffect(() => { if (scroll.current && !loading) { scroll.current.scrollLeft = viewRef.current.scrollLeft; scroll.current.scrollTop = viewRef.current.scrollTop; } }, [loading]);
   const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect } | null>(null);
   const [gainDragging, setGainDragging] = useState(false);
@@ -320,6 +335,7 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
       <div className="toolbar-bank brush-bank"><button className={`icon-button ${brushMode ? 'is-active' : ''}`} disabled={!brushAvailable} aria-pressed={brushMode} aria-label="Brush" data-tip={brushAvailable ? 'Brush\nDrag over a region, then describe the sound to paint into a new channel. Esc to leave.' : 'Brush\nOpen a source and connect to ComfyUI first.'} onClick={() => setBrushMode(value => !value)}><Paintbrush size={14}/></button></div>
       <div className="toolbar-bank marker-bank"><button className="icon-button" disabled={!duration} aria-label="Add or remove a marker at the playhead" data-tip={'Marker\nM adds or removes one at the playhead. , and . jump between markers. Double-click the ruler to loop a section.'} onClick={() => setMarkers(toggleMarker(markers, transport.snapshot().position, duration))}><Flag size={14}/></button></div>
       {picked.size > 0 && <div className="toolbar-bank pick-bank"><output>{picked.size} selected</output><button className="icon-button" aria-label={`Delete ${picked.size} selected channels`} data-tip={'Delete selected\nDelete key. The audio stays on disk.'} onClick={event => { const box = event.currentTarget.getBoundingClientRect(); askDelete([...picked], box.left - 100, box.bottom + 6); }}><Trash2 size={14}/></button><button className="icon-button" aria-label="Clear channel selection" data-tip="Clear selection" onClick={() => setPicked(new Set())}><X size={12}/></button></div>}
+      <div className="toolbar-bank meter-bank"><button className={`icon-button ${metering ? 'is-active' : ''}`} aria-pressed={metering} aria-label="Channel level meters" data-tip={'Level meters\nShow a thin level bar on each channel while playing. Turn off if playback stutters.'} onClick={() => setMetering(value => !value)}><Activity size={14}/></button></div>
       <div className="toolbar-bank history-bank"><button className="icon-button" disabled={!historyState.undo} aria-label="Undo" data-tip={'Undo\nCtrl+Z'} onClick={() => travel('undo')}><Undo2 size={14}/></button><button className="icon-button" disabled={!historyState.redo} aria-label="Redo" data-tip={'Redo\nCtrl+Shift+Z or Ctrl+Y'} onClick={() => travel('redo')}><Redo2 size={14}/></button></div>
       <div className="toolbar-bank range-bank">{selection ? <><output>{clock(selection.start)} → {clock(selection.end)}</output><button className={`icon-button loop-lock ${loopLocked ? 'is-active' : ''}`} aria-label="Loop-lock selection" aria-pressed={loopLocked} data-tip={loopLocked ? 'Unlock loop' : 'Loop selected range'} onClick={lockLoop}><Repeat2 size={14}/>{loopLocked && <LockKeyhole size={9}/>}</button><button className="icon-button" aria-label="Clear selection" data-tip="Clear selection" onClick={() => transport.clearSelection()}><X size={12}/></button></> : <span className="range-hint" data-tip={'Select a range\nShift + drag on the timeline to select and loop a range.'}><Repeat2 size={13}/></span>}</div>
       <div className="toolbar-bank zoom-bank"><WaveformKnob value={waveHeight} onChange={setWaveHeight} onPreview={value => section.current?.style.setProperty("--wave-height", String(value))} rowValue={knobFromRow(rowHeight)} onRowChange={value => setRowHeight(rowFromKnob(value))} onRowPreview={value => section.current?.style.setProperty("--row-height", `${rowFromKnob(value)}px`)} onSizing={active => section.current?.classList.toggle('is-sizing', active)}/><span className="tool-divider"/><button className="icon-button" disabled={zoom <= 1} onClick={() => setZoom(value => Math.max(1, value / 2))} aria-label="Zoom out" data-tip="Zoom out"><ZoomOut size={15}/></button><output>{zoom}×</output><button className="icon-button" disabled={zoom >= 8} onClick={() => setZoom(value => Math.min(8, value * 2))} aria-label="Zoom in" data-tip="Zoom in"><ZoomIn size={15}/></button></div>
