@@ -59,6 +59,8 @@ export class MediaTransport {
     if (this.video && !this.video.paused) this.alignAudio();
     this.emit();
   }
+  // Replaces the channel list while keeping the context, e.g. after a channel's audio was decoded late.
+  setTracks(tracks) { this.tracks = tracks; if (this.video && !this.video.paused) this.alignAudio(); }
   setMix(mix) {
     this.mix = mix;
     const anySolo = Object.values(mix).some(value => value.solo);
@@ -103,7 +105,7 @@ export class MediaTransport {
     this.anchor = { at, offset, rate };
     const anySolo = Object.values(this.mix).some(value => value.solo);
     for (const { stem, buffer } of this.tracks) {
-      if (offset >= buffer.duration) continue;
+      if (!buffer || offset >= buffer.duration) continue;
       const gain = ctx.createGain(); const state = this.mix[stem.id];
       gain.gain.value = state && !state.mute && (!anySolo || state.solo) ? state.level : 0;
       gain.connect(ctx.destination); this.gains.set(stem.id, gain);
