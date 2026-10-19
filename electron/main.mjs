@@ -10,6 +10,7 @@ import { SAMManager } from './sam-manager.mjs';
 import { GuideSepManager } from './guidesep-manager.mjs';
 import { BatchRunner, safeName } from './batch.mjs';
 import { BrushModelManager } from './brush-manager.mjs';
+import { MUSIC_FILES, musicFolder } from './music.mjs';
 import { MixExporter, writeWav } from './mix-export.mjs';
 import { audioFilters, isAudioPath, isSourcePath, sourceFilters } from './media-types.mjs';
 import { Projects } from './projects.mjs';
@@ -54,6 +55,7 @@ app.whenReady().then(async () => {
   const batch = new BatchRunner(batchSeparation);
   const mixExporter = new MixExporter();
   const brushModel = new BrushModelManager();
+  const musicModel = new BrushModelManager({ files: MUSIC_FILES, folderFor: musicFolder, label: 'The music model', doneMessage: 'Music model ready. Check the engine again; ComfyUI needs no restart if the integration is already updated.' });
   audioRenderer = new AudioRenderer(join(app.getPath('userData'), 'edited-audio'));
   const projects = new Projects(app.getPath('userData'), separation, sources, expose);
   const assertExportTarget = async target => {
@@ -154,12 +156,18 @@ app.whenReady().then(async () => {
     await ensureProject();
     if (separation.active || videoExporter.active || audioRenderer.active || mixExporter.active) throw Error('Finish the current job before starting a batch.');
     if (samManager.active || guidesepManager.active) throw Error('Wait for model preparation to finish first.');
-    if (!options || typeof options !== 'object' || !['stems', 'sam', 'guidesep'].includes(options.mode)) throw Error('Choose a model for the batch.');
+    if (!options || typeof options !== 'object' || !['stems', 'sam', 'guidesep', 'music', 'uss'].includes(options.mode)) throw Error('Choose a model for the batch.');
     if (!Array.isArray(urls)) throw Error('Choose files first.');
     const files = urls.map(item => ({ name: String(item?.name || 'file'), path: resolveSource(item?.url) }));
     if (files.some(file => !file.path)) throw Error('One of the chosen files is no longer available. Choose the files again.');
     let job, tag;
     if (options.mode === 'stems') { if (!['mrx', 'bandit', 'sfc'].includes(options.model)) throw Error('Unknown model.'); job = () => ({ mode: 'stems', model: options.model }); tag = options.model; }
+    else if (options.mode === 'music') { job = () => ({ mode: 'music' }); tag = 'music'; }
+    else if (options.mode === 'uss') {
+      const target = typeof options.target === 'string' ? options.target.trim() : '';
+      if (!target || target.length > 200) throw Error('Choose a USS sound first.');
+      job = () => ({ mode: 'uss', target, threshold: 0.1, autoThreshold: options.autoThreshold === true }); tag = `USS ${target.slice(0, 30)}`;
+    }
     else if (options.mode === 'sam') {
       const target = typeof options.target === 'string' ? options.target.trim() : '';
       if (!target || target.length > 200) throw Error('Describe the sound for SAM Audio first.');
@@ -176,6 +184,9 @@ app.whenReady().then(async () => {
   handle('brush:status', profile => brushModel.status(sanitize(profile)));
   handle('brush:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return brushModel.start(sanitize(profile)); });
   handle('brush:cancel', () => brushModel.cancel());
+  handle('music:status', profile => musicModel.status(sanitize(profile)));
+  handle('music:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return musicModel.start(sanitize(profile)); });
+  handle('music:cancel', () => musicModel.cancel());
   handle('batch:status', () => batch.snapshot());
   handle('batch:cancel', () => { batch.cancel(); return batch.snapshot(); });
   handle('mix:export', async (profile, options) => {

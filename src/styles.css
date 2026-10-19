@@ -340,3 +340,40 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
   .track-mix button{width:18px;height:18px;font-size:9px}
 }
 .waveform-clip .clip-edge{z-index:3}
+
+/* Separator panel: header progress, six model tiles, floating run button */
+.panel-heading{position:relative}
+.heading-progress{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden;pointer-events:none}
+.heading-progress i{display:block;height:100%;width:100%;background:var(--yellow);transform-origin:left;transition:transform .4s ease;box-shadow:0 0 6px #f2ff5988}
+.heading-progress i.is-indeterminate{width:35%;transform:none;animation:heading-slide 1.3s ease-in-out infinite}
+@keyframes heading-slide{from{transform:translateX(-100%)}to{transform:translateX(286%)}}
+.model-picker{grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.model-tile{padding:5px 0}
+.model-tile span{font-size:7.5px;letter-spacing:.1px}
+.studio-workspace .control-content{overflow-y:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;scrollbar-width:none}
+.studio-workspace .operation-section>.primary-button{position:sticky;bottom:8px;z-index:2;box-shadow:0 0 0 5px var(--surface)}
+
+/* Toolbar buttons: the highlight of a selected tool sits evenly inside its frame */
+.toolbar-bank:not(.export-bank){padding:2px}
+.toolbar-bank .icon-button{width:23px;height:23px}
+.pick-bank output{color:var(--yellow);font-size:10px}
+
+/* Channel selection, level knob, meter, compact fold arrow */
+.track-controls{user-select:none}
+.track-controls.is-picked{background:color-mix(in srgb,var(--track) 14%,#302936);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--track) 55%,transparent)}
+.waveform-lane.is-picked{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--track) 30%,transparent)}
+.level-knob{position:relative;width:22px;height:22px;border-radius:50%;border:1px solid #ffffff22;background:radial-gradient(circle at 35% 30%,#3b3342,#211927);flex-shrink:0;cursor:ns-resize;touch-action:none}
+.level-knob:hover,.level-knob.is-dragging{border-color:var(--track)}
+.level-dial{position:absolute;inset:0;display:block}
+.level-dial i{position:absolute;left:50%;top:2px;width:2px;height:6px;margin-left:-1px;border-radius:1px;background:var(--track)}
+.level-knob .knob-readout{position:absolute;left:28px;top:50%;transform:translateY(-50%);padding:2px 5px;font:9px Consolas,monospace;background:#352e3b;border:1px solid #ffffff22;border-radius:4px;white-space:nowrap;z-index:5;pointer-events:none}
+.channel-meter{position:absolute;left:0;right:0;bottom:0;height:3px;background:#ffffff0d;pointer-events:none}
+.channel-meter i{display:block;height:100%;background:linear-gradient(90deg,var(--track) 0,var(--track) 72%,#ffd24d 88%,#ff5d5d 100%);clip-path:inset(0 100% 0 0)}
+.meter-db{font:8px Consolas,monospace;font-style:normal;color:#9b939f;min-width:18px;text-align:right;margin-left:auto}
+@container ctl (max-height:57px){.meter-db{display:none}.level-knob{width:18px;height:18px}.level-dial i{height:5px}}
+@container ctl (max-height:41px){.level-knob{display:none}.group-fold{display:inline-flex;width:14px;height:18px}}
+
+/* Smoother timeline: lanes outside the view are not laid out or painted, and waveforms rest while a row is being sized */
+.studio-workspace .waveform-lane{content-visibility:auto;contain-intrinsic-block-size:auto var(--row,var(--row-height,68px))}
+.is-sizing .waveform-clip svg{visibility:hidden}
+.is-sizing .waveform-clip,.is-sizing .waveform-lane,.is-sizing .track-controls{transition:none}

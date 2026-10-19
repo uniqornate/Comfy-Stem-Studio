@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AudioLines, ArrowLeft, Keyboard, Layers, Lightbulb, Mic, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
+import { AudioLines, ArrowLeft, Keyboard, Layers, Lightbulb, Music4, ScanSearch, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
 import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportState, Stem, SAMGuidance, ProjectInfo, ProjectSession, ProjectPayload, TimelineView, ReferenceAudio } from './types';
 import './styles.css';
 const comfyWordmark = new URL('./assets/comfy/comfy-wordmark.svg', import.meta.url).href;
@@ -19,7 +19,9 @@ import { ModelModal } from './ModelModal';
 import { MODELS, modelName } from './models.mjs';
 import { SAMPrepare, SAMVariantSwitch, useSAMStatus } from './SAMPrepare';
 import { SAMGuidanceEditor } from './SAMGuidanceEditor';
-import { GuideSepPanel, useGuideSepStatus } from './GuideSepPanel';
+import { MusicPanel } from './MusicPanel';
+import { JobProgress } from './JobProgress';
+import { TargetPicker } from './TargetPicker';
 import { normalizeGuidance } from './sam-guidance.mjs';
 import { ShortcutsPanel } from './ShortcutsPanel';
 import { BatchModal } from './BatchModal';
@@ -94,18 +96,16 @@ function App() {
   const [lastGuidance, setLastGuidance] = useState<SAMGuidance | undefined>(undefined);
   const [samVariant, setSAMVariant] = useState<'small-tv' | 'large-tv'>('small-tv');
   const [detailMode, setDetailMode] = useState<'uss' | 'sam'>('uss');
-  const [modelModal, setModelModal] = useState<'sam' | 'guidesep' | null>(null);
+  const [modelModal, setModelModal] = useState<'sam' | 'uss' | 'music' | null>(null);
   const [sourceGuidance, setSourceGuidance] = useState<SAMGuidance>({});
   const [reference, setReference] = useState<ReferenceAudio | null>(null);
   const [referenceOffset, setReferenceOffset] = useState(0);
-  const [mixture, setMixture] = useState<ReferenceAudio | null>(null);
   const [markers, setMarkers] = useState<number[]>([]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [brushRegion, setBrushRegion] = useState<{ start: number; end: number } | null>(null);
   const [suggestion, setSuggestion] = useState<{ model: string; text: string; detail: string } | null>(null);
   const [sam, setSAM] = useSAMStatus(profile, samVariant);
-  const [guide, setGuide] = useGuideSepStatus(profile);
   const [floatPosition, setFloatPosition] = useState({ x: Math.max(8, window.innerWidth - 340), y: 90 });
   const [floatWidth, setFloatWidth] = useState(320);
   const [videoRatio, setVideoRatio] = useState(16 / 9);
@@ -277,10 +277,13 @@ function App() {
   let sourceGuidanceError = '';
   if (modelKind === 'prompt') { try { if (!sourceGuidance.visualOnly && !sourceGuidance.description?.trim()) throw Error('Describe the sound you want, or draw a visual target.'); normalizeGuidance(sourceGuidance, wholeRange); } catch (cause) { sourceGuidanceError = cause instanceof Error ? cause.message : String(cause); } }
   const samReady = !!engine?.sam && !!engine?.samPrompts && !!sam?.ready;
-  const guideReady = !!engine?.guidesep && !!guide?.ready && !!reference;
-  const modelReady = modelKind === 'stems' || (playback.duration > 0 && (modelKind === 'prompt' ? samReady && !sourceGuidanceError : guideReady)) || (modelKind === 'reference' && guideReady && !!mixture);
-  const runLabel = modelKind === 'stems' ? 'Separate stems' : modelKind === 'prompt' ? 'Extract sound' : 'Separate with reference';
-  const separationHint = !source ? 'Choose a source first.' : !connected ? 'Check your ComfyUI and proxy connection first.' : !engine?.ready ? 'Audio engine is not ready. Check connection settings or retry setup.' : modelKind === 'prompt' ? (!samReady ? 'Prepare SAM Audio first.' : sourceGuidanceError || 'SAM Audio pulls the described sound from the whole source.') : modelKind === 'reference' ? (!guideReady ? 'Prepare GuideSep and choose a reference sound first.' : 'GuideSep pulls the instrument that matches your reference.') : 'Three mono stems. The original source stays untouched.';
+  const musicReady = !!engine?.music && !!engine?.musicModel;
+  const ussReady = !!engine?.targets?.includes(target);
+  const modelReady = modelKind === 'stems' || (modelKind === 'music' && musicReady) || (modelKind === 'uss' && ussReady) || (modelKind === 'prompt' && playback.duration > 0 && samReady && !sourceGuidanceError);
+  const runLabel = modelKind === 'stems' ? 'Separate stems' : modelKind === 'music' ? 'Separate music' : modelKind === 'uss' && target === 'All' ? 'Extract all sounds' : 'Extract sound';
+  const setupName = modelKind === 'prompt' ? 'SAM' : modelKind === 'music' ? '6-stem' : 'USS';
+  const modalFor = (kind?: string) => kind === 'prompt' ? 'sam' : kind === 'uss' ? 'uss' : kind === 'music' ? 'music' : null;
+  const separationHint = !source ? 'Choose a source first.' : !connected ? 'Check your ComfyUI and proxy connection first.' : !engine?.ready ? 'Audio engine is not ready. Check connection settings or retry setup.' : modelKind === 'prompt' ? (!samReady ? 'Prepare SAM Audio first.' : sourceGuidanceError || 'SAM Audio pulls the described sound from the whole source.') : modelKind === 'music' ? (!musicReady ? 'Download the music model first.' : 'Six stereo music stems. The original source stays untouched.') : modelKind === 'uss' ? (!ussReady ? 'USS models are not installed, or the integration is out of date.' : target === 'All' ? 'Every detected sound class becomes its own channel.' : `Pulls "${target}" out of the whole source.`) : 'Three mono stems. The original source stays untouched.';
   async function separate() {
     if (!window.desktop || !source || !canSeparate || !modelReady) return;
     setError(''); setSaveNotice('');
@@ -288,9 +291,10 @@ function App() {
       if (modelKind === 'prompt') {
         const label = sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description!.trim();
         setJob(await window.desktop.separateStems(profile, source.url, { mode: 'sam', samModel: samVariant, target: label, threshold: 0.1, range: wholeRange, sam: sourceGuidance, videoUrl: source.url }));
-      } else if (modelKind === 'reference' && reference) {
-        // A chosen audio file replaces the loaded source as the mixture; it has its own length, so no timeline range applies.
-        setJob(await window.desktop.separateStems(profile, mixture?.url || source.url, { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, referenceOffset, ...(mixture ? {} : { range: wholeRange }) }));
+      } else if (modelKind === 'uss') {
+        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'uss', target, threshold: 0.1, autoThreshold: !!engine?.autoThreshold }));
+      } else if (modelKind === 'music') {
+        setJob(await window.desktop.separateStems(profile, source.url, { mode: 'music' }));
       } else setJob(await window.desktop.separateStems(profile, source.url, { model, mode: 'stems' }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
@@ -352,8 +356,8 @@ function App() {
     if (result.takeRemoved) { delete timelines.current[runId]; setSelectedRun(result.runs.at(-1)?.runId || ''); }
     if (detailRequest && ids.includes(detailRequest.stem.id)) { setDetailRequest(null); setDetailOpen(false); }
   }
-  function chooseModel(id: string) { setModel(id); const kind = MODELS.find(item => item.id === id)?.kind; setModelModal(kind === 'prompt' ? 'sam' : kind === 'reference' ? 'guidesep' : null); }
-  function makeReference(stem: Stem) { setReference({ name: stem.label, size: stem.size, url: stem.url }); setModel('guidesep'); setModelModal('guidesep'); setSaveNotice(`"${stem.label}" is now the GuideSep reference.`); }
+  function chooseModel(id: string) { setModel(id); setModelModal(modalFor(MODELS.find(item => item.id === id)?.kind)); }
+  function makeReference(stem: Stem) { setReference({ name: stem.label, size: stem.size, url: stem.url }); setSaveNotice(`"${stem.label}" is now the GuideSep reference. Right-click a channel, choose Extract sound and pick GuideSep.`); }
   async function exportMixFile(options: MixExportOptions) {
     if (!window.desktop) return null;
     setError(''); setSaveNotice('');
@@ -361,9 +365,9 @@ function App() {
     if (path) setSaveNotice(`Mix saved to ${path}`);
     return path;
   }
-  const batchOptions: BatchOptions | null = modelKind === 'stems' ? { mode: 'stems', model } : modelKind === 'prompt' ? (sourceGuidance.description?.trim() ? { mode: 'sam', samModel: samVariant, target: sourceGuidance.description.trim() } : null) : reference ? { mode: 'guidesep', target: reference.name.replace(/\.[^.]+$/, ''), referenceUrl: reference.url, referenceOffset } : null;
-  const batchBlocked = !connected ? 'Check the ComfyUI connection first' : !engine?.ready ? 'The audio engine is not ready' : modelKind === 'stems' ? (engine.models?.includes(model) ? '' : 'This model is not installed') : modelKind === 'prompt' ? (!samReady ? 'Prepare SAM Audio first' : !sourceGuidance.description?.trim() ? 'Describe the sound in the SAM options first' : '') : (!guideReady ? 'Prepare GuideSep and choose a reference first' : '');
-  const batchLabel = modelKind === 'stems' ? modelName(model) || model : modelKind === 'prompt' ? `SAM Audio · ${sourceGuidance.description?.trim() || 'no description yet'}` : `GuideSep · ${reference?.name || 'no reference yet'}`;
+  const batchOptions: BatchOptions | null = modelKind === 'stems' ? { mode: 'stems', model } : modelKind === 'music' ? { mode: 'music' } : modelKind === 'uss' ? { mode: 'uss', target, autoThreshold: !!engine?.autoThreshold } : sourceGuidance.description?.trim() ? { mode: 'sam', samModel: samVariant, target: sourceGuidance.description.trim() } : null;
+  const batchBlocked = !connected ? 'Check the ComfyUI connection first' : !engine?.ready ? 'The audio engine is not ready' : modelKind === 'stems' ? (engine.models?.includes(model) ? '' : 'This model is not installed') : modelKind === 'music' ? (musicReady ? '' : 'Download the music model first') : modelKind === 'uss' ? (ussReady ? '' : 'Choose an installed USS sound first') : (!samReady ? 'Prepare SAM Audio first' : !sourceGuidance.description?.trim() ? 'Describe the sound in the SAM options first' : '');
+  const batchLabel = modelKind === 'stems' ? modelName(model) || model : modelKind === 'music' ? 'HTDemucs · six music stems' : modelKind === 'uss' ? `USS · ${target === 'All' ? 'all detected sounds' : target}` : `SAM Audio · ${sourceGuidance.description?.trim() || 'no description yet'}`;
   useEffect(() => {
     setSuggestion(null);
     if (!source || source.missing || !window.desktop || source.size > 80 * 1048576) return;
@@ -430,17 +434,17 @@ function App() {
     <main ref={workspaceMain} className={`workspace-main ${timelineExpanded ? 'timeline-expanded' : ''}`} style={{ '--workspace-height': `${topHeight}px` } as React.CSSProperties}>
       <div className="workspace-grid">
         <aside className="panel controls-panel">
-          <div className="panel-heading"><h2>Soundtrack</h2><span className="badge">LOCAL</span></div>
-          <div className="control-content" tabIndex={0} aria-label="Soundtrack controls">
+          <div className="panel-heading"><h2>Separator</h2><span className="badge">LOCAL</span><JobProgress job={job}/></div>
+          <div className="control-content" tabIndex={0} aria-label="Separator controls">
             <span className="section-label">SOURCE</span>
             <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={20}/></span><span className="source-description"><strong>{source ? source.name : 'Add video or audio'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB · Original source` : 'MP4, MOV, MKV, MP3, WAV, FLAC and more'}</small></span><Plus size={16}/></button>
             <div className={`operation-section ${activeOperation === 'stems' ? 'is-selected' : ''}`} onFocusCapture={() => setActiveOperation('stems')} onPointerDownCapture={() => setActiveOperation('stems')}>
             <div className="section-title"><span className="section-label">STEM SEPARATION</span><span className="subtle">{MODELS.length} MODELS</span></div>
-            <ModelPicker value={model} onChange={chooseModel} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, guidesep: engine ? !!engine.guidesep : undefined }}/>
+            <ModelPicker value={model} onChange={chooseModel} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, music6: engine ? musicReady : undefined, uss: engine ? !!engine.targets?.length : undefined }}/>
             <p className="model-caption">{modelName(model)}</p>
             {suggestion && suggestion.model !== model && modelKind === 'stems' && <button className="model-suggestion" onClick={() => chooseModel(suggestion.model)} data-tip={`${suggestion.text}\n${suggestion.detail}`}><Lightbulb size={12}/><span>{suggestion.text} · try {MODELS.find(item => item.id === suggestion.model)?.short}</span></button>}
-            {modelKind !== 'stems' && <button className="model-summary" disabled={jobBusy} onClick={() => setModelModal(modelKind === 'prompt' ? 'sam' : 'guidesep')} data-tip="Open options"><span>{modelKind === 'prompt' ? `${samVariant === 'small-tv' ? 'Small' : 'Large'} · ${sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description?.trim() || 'Describe the sound'}` : reference?.name || 'Choose a reference sound'}</span><SlidersHorizontal size={13}/></button>}
-            <button className="primary-button" disabled={modelKind !== 'stems' && !modelReady ? jobBusy : !canSeparate} onClick={() => { if (modelKind !== 'stems' && !modelReady) setModelModal(modelKind === 'prompt' ? 'sam' : 'guidesep'); else void separate(); }} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : modelKind !== 'stems' && !modelReady ? `Set up ${modelKind === 'prompt' ? 'SAM' : 'GuideSep'}` : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
+            {modelKind !== 'stems' && <button className="model-summary" disabled={jobBusy} onClick={() => setModelModal(modalFor(modelKind))} data-tip="Open options"><span>{modelKind === 'prompt' ? `${samVariant === 'small-tv' ? 'Small' : 'Large'} · ${sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description?.trim() || 'Describe the sound'}` : modelKind === 'uss' ? (target === 'All' ? 'All detected sounds' : target) : 'Vocals, drums, bass, guitar, piano, other'}</span><SlidersHorizontal size={13}/></button>}
+            <button className="primary-button" disabled={modelKind !== 'stems' && !modelReady ? jobBusy : !canSeparate} onClick={() => { if (modelKind !== 'stems' && !modelReady) setModelModal(modalFor(modelKind)); else void separate(); }} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : modelKind !== 'stems' && !modelReady ? `Set up ${setupName}` : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
             <button className="quiet-button batch-link" disabled={jobBusy || !window.desktop} onClick={() => setBatchOpen(true)} data-tip={'Batch\nRun the selected model on many files, one after another.'}><Layers size={12}/> Batch files…</button>
             {(jobBusy || job.phase === 'failed' || job.phase === 'cancelled') && <p className="helper" role="status">{job.message}</p>}
             {job.canCancel && <button className="quiet-button" onClick={() => window.desktop?.cancelSeparation().then(setJob).catch(cause => setError(String(cause)))}>Cancel separation</button>}
@@ -464,8 +468,11 @@ function App() {
       {playback.duration > 0 ? <SAMGuidanceEditor key={`${source?.url}:${playback.duration}`} range={wholeRange} sourceUrl={source?.url || ''} value={sourceGuidance} change={setSourceGuidance} supported={!!engine?.samPrompts} visualSupported={!!engine?.samVisual && !sourceIsAudio}/> : <p className="helper">Open a source to describe the sound you want.</p>}
       <SAMPrepare sam={sam} setSAM={setSAM} profile={profile} variant={samVariant} busy={jobBusy}/>
     </ModelModal>}
-    {modelModal === 'guidesep' && <ModelModal icon={<Mic size={15}/>} title="GuideSep" close={() => setModelModal(null)} note={!source ? 'Open a source first' : !reference ? 'Choose a reference sound' : guideReady ? 'Pulls the matching instrument' : 'Prepare GuideSep first'} runLabel="Separate" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
-      <GuideSepPanel profile={profile} engine={engine} state={guide} setState={setGuide} reference={reference} setReference={setReference} offset={referenceOffset} setOffset={setReferenceOffset} busy={jobBusy} mixture={mixture} setMixture={setMixture} sourceName={source?.name}/>
+    {modelModal === 'uss' && <ModelModal icon={<ScanSearch size={15}/>} title="USS · sound by name" close={() => setModelModal(null)} note={!source ? 'Open a source first' : !engine?.targets?.length ? 'USS is not installed' : ussReady ? (target === 'All' ? 'Every detected sound becomes a channel' : `Pulls "${target}" from the whole source`) : 'Choose a sound'} runLabel={target === 'All' ? 'Extract all' : 'Extract'} runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
+      {engine?.targets?.length ? <TargetPicker target={target} setTarget={setTarget} withAll installed={engine.targets}/> : <p className="helper">USS and PANNs are not installed in your ComfyUI, or the integration is out of date. Run the setup again with USS selected and restart ComfyUI.</p>}
+    </ModelModal>}
+    {modelModal === 'music' && <ModelModal icon={<Music4 size={15}/>} title="HTDemucs · six music stems" close={() => setModelModal(null)} note={!source ? 'Open a source first' : musicReady ? 'Splits the whole source into six channels' : 'Download the music model first'} runLabel="Separate music" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
+      <MusicPanel engine={engine} profile={profile} refreshEngine={refreshEngine}/>
     </ModelModal>}
     {brushRegion && <BrushModal region={brushRegion} engine={engine} profile={profile} busy={jobBusy || !canSeparate} close={() => { setBrushRegion(null); transport.clearSelection(); }} refreshEngine={refreshEngine} run={prompt => void runBrush(prompt)}/>}
     {shortcutsOpen && <ShortcutsPanel close={() => setShortcutsOpen(false)}/>}

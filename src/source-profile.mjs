@@ -63,7 +63,7 @@ export function analyzeSource(samples, rate, seconds = 90) {
 export function suggestModel(profile) {
   if (!profile || profile.kind === 'silent') return null;
   if (profile.kind === 'dialogue') return { model: 'mrx', text: 'Mostly speech', detail: 'MRX is tuned for film dialogue. BandIt v2 is the multilingual alternative.' };
-  if (profile.kind === 'music') return { model: 'guidesep', text: 'Mostly music', detail: 'MRX and BandIt return music as one stem. GuideSep can pull a single instrument from a hummed or played reference.' };
+  if (profile.kind === 'music') return { model: 'music6', text: 'Mostly music', detail: 'MRX and BandIt return music as one stem. The 6-stem model splits it into vocals, drums, bass, guitar, piano and other.' };
   if (profile.kind === 'effects') return { model: 'mrx', text: 'Mostly effects or noise', detail: 'MRX returns an effects stem. For one named sound, extract it from that stem with USS.' };
   return { model: 'mrx', text: 'Mixed soundtrack', detail: 'A film-style mix of speech, music and effects. MRX is a good first try.' };
 }

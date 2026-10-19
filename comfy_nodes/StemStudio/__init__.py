@@ -134,3 +134,7 @@ NODE_CLASS_MAPPINGS.update(StemStudioAudioRange=StemStudioAudioRange, StemStudio
 
 from .audio_edits import StemStudioEditAudio
 NODE_CLASS_MAPPINGS["StemStudioEditAudio"] = StemStudioEditAudio
+
+from .music_nodes import StemStudioMusicSeparate
+NODE_CLASS_MAPPINGS["StemStudioMusicSeparate"] = StemStudioMusicSeparate
+NODE_DISPLAY_NAME_MAPPINGS["StemStudioMusicSeparate"] = "Stem Studio - Music Stems (6)"

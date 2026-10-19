@@ -10,16 +10,16 @@ export function brushFolder(profile) {
   return join(profile.installation, 'models', 'audio_separation', BRUSH_FOLDER);
 }
 export class BrushModelManager {
-  constructor(options = {}) { this.files = options.files || BRUSH_FILES; this.fetchImpl = options.fetchImpl || fetch; this.state = { phase: 'idle', message: '', percent: -1 }; this.active = false; }
+  constructor(options = {}) { this.files = options.files || BRUSH_FILES; this.folderFor = options.folderFor || brushFolder; this.doneMessage = options.doneMessage || 'Sound model ready. Restart ComfyUI once so it lists the new files.'; this.label = options.label || 'The sound model'; this.fetchImpl = options.fetchImpl || fetch; this.state = { phase: 'idle', message: '', percent: -1 }; this.active = false; }
   async status(profile) {
     let ready = true;
-    try { const folder = brushFolder(profile); for (const file of this.files) if ((await stat(join(folder, file.path)).catch(() => null))?.size !== file.size) ready = false; } catch { ready = false; }
+    try { const folder = this.folderFor(profile); for (const file of this.files) if ((await stat(join(folder, file.path)).catch(() => null))?.size !== file.size) ready = false; } catch { ready = false; }
     return { ...this.state, ready };
   }
   cancel() { this.abort?.abort(); }
   async start(profile) {
-    if (this.active) throw Error('The sound model is already downloading.');
-    const folder = brushFolder(profile);
+    if (this.active) throw Error(`${this.label} is already downloading.`);
+    const folder = this.folderFor(profile);
     this.active = true; this.abort = new AbortController();
     this.state = { phase: 'downloading', message: 'Starting the download…', percent: 0 };
     this.pending = this.run(folder).catch(error => { this.state = { phase: this.abort.signal.aborted ? 'cancelled' : 'failed', message: this.abort.signal.aborted ? 'Download cancelled. The partial file is kept and resumes next time.' : error.message, percent: -1 }; }).finally(() => { this.active = false; });
@@ -36,6 +36,6 @@ export class BrushModelManager {
       } });
       before += file.size;
     }
-    this.state = { phase: 'complete', message: 'Sound model ready. Restart ComfyUI once so it lists the new files.', percent: 100 };
+    this.state = { phase: 'complete', message: this.doneMessage, percent: 100 };
   }
 }

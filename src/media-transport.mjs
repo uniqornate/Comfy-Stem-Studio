@@ -8,7 +8,7 @@ export class MediaTransport {
     this.requestFrame = options.requestFrame || (callback => requestAnimationFrame(callback));
     this.cancelFrame = options.cancelFrame || (id => cancelAnimationFrame(id));
     this.video = null; this.context = null; this.tracks = []; this.mix = {};
-    this.sources = []; this.gains = new Map(); this.listeners = new Set(); this.events = [];
+    this.sources = []; this.gains = new Map(); this.meters = new Map(); this.listeners = new Set(); this.events = [];
     this.frame = null; this.generation = 0; this.buffering = false; this.mode = 'original'; this.error = '';
     this.anchor = null; this.scrubTarget = null; this.playPending = false; this.selection = null; this.loopLocked = false; this.wantsPlayback = false;
   }
@@ -67,6 +67,13 @@ export class MediaTransport {
       gain.gain.setTargetAtTime(state && !state.mute && (!anySolo || state.solo) ? state.level : 0, this.context.currentTime, 0.012);
     }
   }
+  // Peak of the last ~23 ms of a channel after its fader and mute, as a linear level. 0 when it is not playing.
+  level(id) {
+    const meter = this.meters.get(id); if (!meter) return 0;
+    meter.analyser.getFloatTimeDomainData(meter.data);
+    let peak = 0; for (let i = 0; i < meter.data.length; i++) { const value = Math.abs(meter.data[i]); if (value > peak) peak = value; }
+    return peak;
+  }
   setEdits(edits) { this.edits = edits; if (this.video && !this.video.paused) this.alignAudio(); }
   setMode(mode) {
     if (mode === 'stems' && !this.tracks.length) return;
@@ -75,7 +82,7 @@ export class MediaTransport {
   }
   stopAudio() {
     this.sources.forEach(source => { try { source.stop(); } catch {} source.disconnect(); });
-    this.sources = []; this.gains.forEach(gain => gain.disconnect()); this.gains.clear(); this.anchor = null;
+    this.sources = []; this.gains.forEach(gain => gain.disconnect()); this.gains.clear(); this.meters.clear(); this.anchor = null;
   }
   alignAudio() {
     this.stopAudio();
@@ -89,6 +96,7 @@ export class MediaTransport {
       const gain = ctx.createGain(); const state = this.mix[stem.id];
       gain.gain.value = state && !state.mute && (!anySolo || state.solo) ? state.level : 0;
       gain.connect(ctx.destination); this.gains.set(stem.id, gain);
+      if (ctx.createAnalyser) { const analyser = ctx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0; gain.connect(analyser); this.meters.set(stem.id, { analyser, data: new Float32Array(analyser.fftSize) }); }
       if (!this.edits?.[stem.id]) {
         const source = ctx.createBufferSource(); source.buffer = buffer; source.playbackRate.value = rate; source.connect(gain);
         if (this.loopLocked && this.selection) source.start(at, offset, Math.max(0, this.selection.end - offset)); else source.start(at, offset);

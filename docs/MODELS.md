@@ -38,3 +38,7 @@ Decision for the desktop installer and for node-pack installs: **every model fil
 What is deliberately not a model file: the private Python environments for SAM Audio and GuideSep and the package download cache. They are tooling, shared by both features and fully regenerable, so the desktop app keeps them in its own data folder (`%APPDATA%\stem-studio`). A node-pack install should keep them next to the node, so removing the node removes them too.
 
 If ComfyUI is not installed yet, the desktop setup can install the official portable build first (GitHub release, checked against the SHA-256 GitHub publishes, unpacked with Windows `tar` or 7-Zip) and then uses its `models` folder as above.
+
+## HTDemucs 6-source (0.12.8)
+
+`htdemucs_6s` (Meta, MIT) gives vocals, drums, bass, guitar, piano and other from stereo music. File `https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/5c90dfd2-34c22ccb.th`, 54996327 bytes, SHA-256 `34c22ccb381c6f9fdbf324f04e1e2fe21aaaf293f5ded163a162697ff9a02ddd`, saved in `<ComfyUI>/models/audio_separation/htdemucs-6s`. Downloaded from the 6-Stem dialog after consent. BS-Roformer SW (also six stems, better reported scores) was not chosen: no checkpoint download or license could be verified. Meta calls the six-source model experimental; piano bleeds.

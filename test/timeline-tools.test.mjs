@@ -49,7 +49,7 @@ test('source profiler tells speech, sustained music and effect bursts apart and 
   const rate = 44100;
   const speech = analyzeSource(speechLike(8, rate), rate), music = analyzeSource(musicLike(8, rate), rate), effects = analyzeSource(effectsLike(8, rate), rate);
   assert.equal(speech.kind, 'dialogue'); assert.equal(music.kind, 'music'); assert.equal(effects.kind, 'effects');
-  assert.equal(suggestModel(speech).model, 'mrx'); assert.equal(suggestModel(music).model, 'guidesep'); assert.equal(suggestModel(effects).model, 'mrx');
+  assert.equal(suggestModel(speech).model, 'mrx'); assert.equal(suggestModel(music).model, 'music6'); assert.equal(suggestModel(effects).model, 'mrx');
   assert.equal(analyzeSource(new Float32Array(rate * 3), rate).kind, 'silent'); assert.equal(suggestModel(analyzeSource(new Float32Array(rate * 3), rate)), null);
   assert.equal(analyzeSource(new Float32Array(10), rate), null); assert.equal(analyzeSource(null, rate), null);
   const broken = speechLike(4, rate); broken[1000] = NaN; assert.equal(analyzeSource(broken, rate).kind, 'dialogue');

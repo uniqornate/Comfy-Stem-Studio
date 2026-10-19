@@ -8,6 +8,7 @@ export class MediaTransport {
   setAudio(context: AudioContext | null, tracks: { stem: { id: string }; buffer: AudioBuffer }[], mix: Record<string, { mute: boolean; solo: boolean; level: number }>): void;
   setMix(mix: Record<string, { mute: boolean; solo: boolean; level: number }>): void;
   setEdits(edits: Record<string, import('./clip-edits.mjs').ChannelEdit>): void;
+  level(id: string): number;
   setMode(mode: 'original' | 'stems'): void;
   setSelection(from: number, to: number): void; commitSelection(): void | Promise<void>; clearSelection(): void; setLoopLocked(locked: boolean): void;
   play(): Promise<void>; pause(): void; toggle(): void | Promise<void>; seek(value: number): void; scrub(value: number): void;

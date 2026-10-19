@@ -162,3 +162,11 @@ test('a moved clip is scheduled at its timeline position but reads from its own 
   assert.deepEqual(transport.sources[0].started, [25, 1, 2]); // the clip starts 5 s after the playhead and reads from source 1
   transport.dispose();
 });
+test('channel meters tap each fader, read the peak and vanish when playback stops', async () => {
+  const { transport, ctx } = fixture();
+  ctx.createAnalyser = () => ({ fftSize: 0, smoothingTimeConstant: 1, connect() {}, getFloatTimeDomainData(data) { data.fill(0); data[3] = -0.5; data[9] = 0.25; } });
+  await transport.play();
+  assert.equal(transport.level('a'), 0.5); assert.equal(transport.level('b'), 0.5); assert.equal(transport.level('missing'), 0);
+  transport.pause(); assert.equal(transport.level('a'), 0);
+  transport.dispose();
+});
