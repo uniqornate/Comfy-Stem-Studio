@@ -11,7 +11,7 @@ import { Separation, stemWorkflow } from '../electron/separation.mjs';
 const brush = { prompt: ' footsteps on gravel ', seconds: 2.5, start: 4.25, seed: 7 };
 
 test('brush settings are validated and normalised', () => {
-  assert.deepEqual(normalizeBrush(brush), { prompt: 'footsteps on gravel', seconds: 2.5, start: 4.25, seed: 7, steps: 8 });
+  assert.deepEqual(normalizeBrush(brush), { prompt: 'footsteps on gravel', seconds: 2.5, start: 4.25, seed: 7, steps: 8, model: 'small', video: false });
   for (const bad of [null, {}, { ...brush, prompt: '   ' }, { ...brush, prompt: 'x'.repeat(301) }, { ...brush, seconds: 0.1 }, { ...brush, seconds: 61 }, { ...brush, start: -1 }, { ...brush, steps: 2 }, { ...brush, seed: 1.5 }, { ...brush, seconds: NaN }]) assert.throws(() => normalizeBrush(bad));
 });
 test('brush graph uses native Stable Audio 3 nodes and pads the painted clip to the source timeline', () => {
@@ -26,10 +26,12 @@ test('brush graph uses native Stable Audio 3 nodes and pads the painted clip to 
 });
 const nodes = (over = {}) => ({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [[BRUSH_CHECKPOINT]] } } }, CLIPLoader: { input: { required: { clip_name: [[BRUSH_ENCODER]], type: [['stable_diffusion', 'stable_audio']] } } }, CLIPTextEncode: {}, KSampler: {}, EmptyLatentAudio: {}, VAEDecodeAudio: {}, StemStudioRestoreRange: {}, ...over });
 test('capability separates missing nodes from a missing model file', () => {
-  assert.deepEqual(brushCapability(nodes()), { brush: true, brushModel: true });
-  assert.deepEqual(brushCapability(nodes({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['other.safetensors']] } } } })), { brush: true, brushModel: false });
-  assert.deepEqual(brushCapability(nodes({ CLIPLoader: { input: { required: { clip_name: [[BRUSH_ENCODER]], type: [['stable_diffusion']] } } } })), { brush: false, brushModel: false });
-  assert.deepEqual(brushCapability({}), { brush: false, brushModel: false });
+  const flags = value => ({ brush: value.brush, brushModel: value.brushModel, small: value.brushModels.small, medium: value.brushModels.medium });
+  assert.deepEqual(flags(brushCapability(nodes())), { brush: true, brushModel: true, small: true, medium: false });
+  assert.equal(brushCapability(nodes({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [[BRUSH_CHECKPOINT, 'stable_audio_3_medium.safetensors']] } } } })).brushModels.medium, true);
+  assert.deepEqual(flags(brushCapability(nodes({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [['other.safetensors']] } } } }))), { brush: true, brushModel: false, small: false, medium: false });
+  assert.deepEqual(flags(brushCapability(nodes({ CLIPLoader: { input: { required: { clip_name: [[BRUSH_ENCODER]], type: [['stable_diffusion']] } } } }))), { brush: false, brushModel: false, small: false, medium: false });
+  assert.deepEqual(flags(brushCapability({})), { brush: false, brushModel: false, small: false, medium: false });
 });
 test('the model manifest pins revisions, sizes and hashes for both files', () => {
   assert.equal(BRUSH_FILES.length, 2);

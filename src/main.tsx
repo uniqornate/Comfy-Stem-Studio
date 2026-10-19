@@ -340,11 +340,11 @@ function App() {
     if (!remaining.some(run => run.runId === activeId)) setSelectedRun(others ? id : remaining[Math.min(index, remaining.length - 1)]?.runId || '');
     setDetailRequest(null); setDetailOpen(false);
   }
-  async function runBrush(prompt: string) {
+  async function runBrush(prompt: string, choice: { model: 'small' | 'medium' | 'mmaudio'; video: boolean }) {
     const region = brushRegion;
     if (!window.desktop || !source || !region || !canSeparate) return;
     setBrushRegion(null); transport.clearSelection(); setError(''); setSaveNotice('');
-    try { setJob(await window.desktop.separateStems(profile, source.url, { mode: 'brush', target: prompt, rootRunId: currentRun?.runId, brush: { prompt, seconds: region.end - region.start, start: region.start, seed: Math.floor(Math.random() * 2 ** 31) } })); }
+    try { setJob(await window.desktop.separateStems(profile, source.url, { mode: 'brush', target: prompt, rootRunId: currentRun?.runId, videoUrl: choice.video ? source.url : undefined, brush: { prompt, seconds: region.end - region.start, start: region.start, seed: Math.floor(Math.random() * 2 ** 31), model: choice.model, video: choice.video } })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   }
   async function refreshEngine() { if (window.desktop) setEngine(await window.desktop.checkEngine(profile)); }
@@ -474,7 +474,7 @@ function App() {
     {modelModal === 'music' && <ModelModal icon={<Music4 size={15}/>} title="HTDemucs · six music stems" close={() => setModelModal(null)} note={!source ? 'Open a source first' : musicReady ? 'Splits the whole source into six channels' : 'Download the music model first'} runLabel="Separate music" runDisabled={!canSeparate || !modelReady} run={() => { setModelModal(null); void separate(); }}>
       <MusicPanel engine={engine} profile={profile} refreshEngine={refreshEngine}/>
     </ModelModal>}
-    {brushRegion && <BrushModal region={brushRegion} engine={engine} profile={profile} busy={jobBusy || !canSeparate} close={() => { setBrushRegion(null); transport.clearSelection(); }} refreshEngine={refreshEngine} run={prompt => void runBrush(prompt)}/>}
+    {brushRegion && <BrushModal region={brushRegion} engine={engine} profile={profile} busy={jobBusy || !canSeparate} close={() => { setBrushRegion(null); transport.clearSelection(); }} hasVideo={!!source && !sourceIsAudio} refreshEngine={refreshEngine} run={(prompt, choice) => void runBrush(prompt, choice)}/>}
     {shortcutsOpen && <ShortcutsPanel close={() => setShortcutsOpen(false)}/>}
     {batchOpen && <BatchModal profile={profile} options={batchOptions} label={batchLabel} blocked={batchBlocked} close={() => setBatchOpen(false)}/>}
     {projectsOpen && <div className="modal-backdrop"><section className="connection-modal projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-title">

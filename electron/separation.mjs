@@ -171,7 +171,17 @@ export class Separation {
     if (!['uss', 'sam', 'guidesep', 'music', 'brush'].includes(options.mode) && status.models && !status.models.includes(options.model || 'mrx')) throw new Error('This model is not installed. Select it in setup and restart ComfyUI.');
     if (options.mode === 'guidesep' && options.referenceOffset !== undefined && (!Number.isFinite(options.referenceOffset) || Math.abs(options.referenceOffset) > 600)) throw new Error('Reference offset must be within 10 minutes.');
     if (options.mode === 'guidesep' && (!status.guidesep || !options.referencePath || typeof options.target !== 'string' || !options.target.trim())) throw new Error('GuideSep integration or reference sound is unavailable. Update the integration, prepare GuideSep and choose a reference.');
-    if (options.mode === 'brush' && (!status.brush || !status.brushModel)) throw new Error(status.brush ? 'The sound model is not listed by ComfyUI yet. Download it from the brush dialog and restart ComfyUI.' : 'Brush needs the updated Stem Studio integration and a ComfyUI with Stable Audio 3 support. Update both and restart ComfyUI.');
+    if (options.mode === 'brush') {
+      const model = options.brush?.model ?? 'small';
+      if (model === 'mmaudio') {
+        if (!status.mmaudio || !status.detailRange) throw new Error('MMAudio needs the updated Stem Studio integration and its node pack. Prepare it from the brush dialog and restart ComfyUI.');
+        if (!status.mmaudioModel) throw new Error('ComfyUI does not list the MMAudio files yet. Finish preparing MMAudio in the brush dialog and restart ComfyUI.');
+        if (options.brush?.video && (!status.samVisual || !options.samVideoPath)) throw new Error('Using the video needs native LoadVideo and the original source video.');
+      } else {
+        const listed = status.brushModels ? status.brushModels[model] : model === 'small' && status.brushModel;
+        if (!status.brush || !listed) throw new Error(status.brush ? 'The sound model is not listed by ComfyUI yet. Download it from the brush dialog and restart ComfyUI.' : 'Brush needs the updated Stem Studio integration and a ComfyUI with Stable Audio 3 support. Update both and restart ComfyUI.');
+      }
+    }
     if (options.mode === 'music' && (!status.music || !status.musicModel)) throw new Error(status.music ? 'The music model is not installed yet. Download it from the 6-stem dialog.' : 'Music stems need the updated Stem Studio integration. Update it and restart ComfyUI.');
     if (options.samModel && !['small-tv','large-tv'].includes(options.samModel)) throw Error('Unsupported SAM model.');
     if (options.samModel === 'large-tv' && !status.samModels) throw Error('Update integration and restart idle ComfyUI to choose SAM Large.');
@@ -182,7 +192,7 @@ export class Separation {
     const client = this.makeClient();
     const workflow = client.workflows.fromJson(stemWorkflow(options));
     workflow.setInput('1', 'audio', client.assets.fromFile(sourcePath));
-    if (options.sam?.visual) workflow.setInput('6', 'file', client.assets.fromFile(options.samVideoPath));
+    if (options.sam?.visual || options.brush?.video) workflow.setInput('6', 'file', client.assets.fromFile(options.samVideoPath));
     if (options.mode === 'guidesep') workflow.setInput('8', 'audio', client.assets.fromFile(options.referencePath));
     this.state.phase = 'uploading'; this.state.message = 'Sending the source to your selected ComfyUI through the official SDK…';
     const job = await client.submit(workflow);

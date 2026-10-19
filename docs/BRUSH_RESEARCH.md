@@ -37,3 +37,7 @@ Phase 1 is implemented: the timeline brush paints a prompt into a new channel wi
 3. All video-aware models are non-commercial or restricted, so the UI should state the license next to the model choice, the same way SFC is handled today.
 
 Open questions before building: exact checkpoint sizes for Woosh and ThinkSound, whether a ComfyUI-native node exists for the chosen video model (otherwise it needs a private runtime like SAM and GuideSep), and how much of the 8 to 12 s training length a brush region should be chunked to.
+
+## Update (0.12.9)
+
+Stable Audio 3 Large (2.7B) is API-only, so it cannot be used. Medium (1.4B, open) and MMAudio (video-aware, via the kijai ComfyUI pack) were added next to Small-SFX in the brush dialog. ThinkSound was not added; see docs/MODELS.md for the reasons. Nothing here was run or judged for quality.

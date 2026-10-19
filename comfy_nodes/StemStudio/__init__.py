@@ -138,3 +138,7 @@ NODE_CLASS_MAPPINGS["StemStudioEditAudio"] = StemStudioEditAudio
 from .music_nodes import StemStudioMusicSeparate
 NODE_CLASS_MAPPINGS["StemStudioMusicSeparate"] = StemStudioMusicSeparate
 NODE_DISPLAY_NAME_MAPPINGS["StemStudioMusicSeparate"] = "Stem Studio - Music Stems (6)"
+
+from .video_clip import StemStudioVideoClip
+NODE_CLASS_MAPPINGS["StemStudioVideoClip"] = StemStudioVideoClip
+NODE_DISPLAY_NAME_MAPPINGS["StemStudioVideoClip"] = "Stem Studio - Video Region Frames"

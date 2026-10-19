@@ -381,3 +381,12 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 /* Meter bar scales instead of clipping, and its toggle matches the other tool buttons */
 .channel-meter i{width:100%;transform-origin:left;transform:scaleX(0);clip-path:none;background:var(--track)}
 .meter-bank .icon-button.is-active{color:var(--yellow);background:#f2ff5918}
+
+/* Brush model choice */
+.brush-models{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0 0 8px}
+.brush-models button{flex-direction:column;align-items:flex-start;gap:2px;padding:7px 8px;border:1px solid var(--border);border-radius:9px;background:var(--wash);color:var(--muted);text-align:left}
+.brush-models button strong{font-size:11px;font-weight:600;color:var(--text)}
+.brush-models button small{margin:0;font-size:8.5px;color:var(--dim)}
+.brush-models button[aria-pressed=true]{border-color:#f2ff5988;background:#f2ff590d}
+.brush-models button[aria-pressed=true] strong{color:var(--yellow)}
+.brush-parts{font-size:9.5px;color:var(--muted)}

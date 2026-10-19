@@ -42,3 +42,17 @@ If ComfyUI is not installed yet, the desktop setup can install the official port
 ## HTDemucs 6-source (0.12.8)
 
 `htdemucs_6s` (Meta, MIT) gives vocals, drums, bass, guitar, piano and other from stereo music. File `https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/5c90dfd2-34c22ccb.th`, 54996327 bytes, SHA-256 `34c22ccb381c6f9fdbf324f04e1e2fe21aaaf293f5ded163a162697ff9a02ddd`, saved in `<ComfyUI>/models/audio_separation/htdemucs-6s`. Downloaded from the 6-Stem dialog after consent. BS-Roformer SW (also six stems, better reported scores) was not chosen: no checkpoint download or license could be verified. Meta calls the six-source model experimental; piano bleeds.
+
+## Brush models (0.12.9)
+
+The brush dialog offers three models. Each is downloaded from the dialog after consent, with pinned revisions, sizes and SHA-256 hashes, into your ComfyUI.
+
+| Model | Files | Where | License |
+|---|---|---|---|
+| Stable Audio 3 Small-SFX | checkpoint 2.3 GB + T5Gemma encoder 1.2 GB | `models/audio_separation/stable-audio-3` | Stability AI Community License |
+| Stable Audio 3 Medium | `stable_audio_3_medium.safetensors`, 9222116660 bytes, SHA-256 `48d9c65e...8ce0b5`, plus the shared encoder | same folder | same |
+| MMAudio (video + text) | large 44k v2 fp16 (2.1 GB), VAE (0.6 GB), Synchformer (0.5 GB), DFN5B CLIP (2.0 GB), BigVGAN v2 vocoder (0.5 GB) from Kijai/MMAudio_safetensors and nvidia/bigvgan_v2_44khz_128band_512x, pinned revisions | `models/mmaudio` (the folder the node pack reads) | Node pack MIT; MMAudio weights CC BY-NC 4.0, non-commercial only |
+
+MMAudio runs through the community node pack [kijai/ComfyUI-MMAudio](https://github.com/kijai/ComfyUI-MMAudio), commit `8eaeb72edc3aaf2059b57f2d96a1f6f689f19ae2`. The app downloads that commit's archive, unpacks it, checks every file against the git blob hashes in `electron/mmaudio-manifest.json` and only then copies it to `custom_nodes/ComfyUI-MMAudio` (marker `.stemstudio.json`). It also runs `pip install -r requirements.txt` with ComfyUI's own Python (`python_embeded`, `venv` or `.venv` next to or inside the selected folder). This changes your ComfyUI Python environment, which the dialog states before consent. The BigVGAN files are placed by the app so the pack does not download them itself.
+
+ThinkSound was looked at and not added: its checkpoints are 21 GB (5.7 GB light) plus a 2.5 GB VAE and 1 GB Synchformer, the only ComfyUI wrapper last changed in July 2025 bundles the model source and pins `einops==0.7.0` and `vector-quantize-pytorch==1.9.14`, which can break ComfyUI's own environment, and it asks for 12 GB of VRAM.

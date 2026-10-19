@@ -11,6 +11,8 @@ import { GuideSepManager } from './guidesep-manager.mjs';
 import { BatchRunner, safeName } from './batch.mjs';
 import { BrushModelManager } from './brush-manager.mjs';
 import { MUSIC_FILES, musicFolder } from './music.mjs';
+import { brushFiles } from './brush.mjs';
+import { MMAudioManager } from './mmaudio-manager.mjs';
 import { MixExporter, writeWav } from './mix-export.mjs';
 import { audioFilters, isAudioPath, isSourcePath, sourceFilters } from './media-types.mjs';
 import { Projects } from './projects.mjs';
@@ -54,7 +56,9 @@ app.whenReady().then(async () => {
   const batchSeparation = new Separation(join(app.getPath('userData'), 'batch-cache'), expose);
   const batch = new BatchRunner(batchSeparation);
   const mixExporter = new MixExporter();
-  const brushModel = new BrushModelManager();
+  const brushModels = Object.fromEntries(['small', 'medium'].map(model => [model, new BrushModelManager({ files: brushFiles(model), label: model === 'medium' ? 'Stable Audio 3 Medium' : 'The sound model' })]));
+  const mmaudio = new MMAudioManager();
+  const brushOf = model => { const manager = brushModels[model ?? 'small']; if (!manager) throw Error('Unknown sound model.'); return manager; };
   const musicModel = new BrushModelManager({ files: MUSIC_FILES, folderFor: musicFolder, label: 'The music model', doneMessage: 'Music model ready. Check the engine again; ComfyUI needs no restart if the integration is already updated.' });
   audioRenderer = new AudioRenderer(join(app.getPath('userData'), 'edited-audio'));
   const projects = new Projects(app.getPath('userData'), separation, sources, expose);
@@ -181,9 +185,12 @@ app.whenReady().then(async () => {
     }
     return batch.start(sanitize(profile), files, batchFolder, job, tag);
   });
-  handle('brush:status', profile => brushModel.status(sanitize(profile)));
-  handle('brush:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return brushModel.start(sanitize(profile)); });
-  handle('brush:cancel', () => brushModel.cancel());
+  handle('brush:status', (profile, model) => brushOf(model).status(sanitize(profile)));
+  handle('brush:prepare', (profile, model) => { if (separation.active) throw Error('Wait for the current job to finish first.'); return brushOf(model).start(sanitize(profile)); });
+  handle('brush:cancel', model => brushOf(model).cancel());
+  handle('mmaudio:status', profile => mmaudio.status(sanitize(profile)));
+  handle('mmaudio:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return mmaudio.start(sanitize(profile)); });
+  handle('mmaudio:cancel', () => mmaudio.cancel());
   handle('music:status', profile => musicModel.status(sanitize(profile)));
   handle('music:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return musicModel.start(sanitize(profile)); });
   handle('music:cancel', () => musicModel.cancel());
@@ -217,7 +224,7 @@ app.whenReady().then(async () => {
     }
     if (options?.parentId && separation.output(options.parentId).path !== source) throw Error('The selected parent channel does not match its audio.');
     let samVideoPath;
-    if (options?.mode === 'sam' && options.sam?.visual) {
+    if ((options?.mode === 'sam' && options.sam?.visual) || (options?.mode === 'brush' && options.brush?.video)) {
       try { const url = new URL(options.videoUrl); if (url.protocol === 'app-media:' && url.hostname === 'source') samVideoPath = sources.get(url.pathname.slice(1)); } catch {}
       if (!samVideoPath) throw Error('Choose the original video for visual guidance.');
     }
