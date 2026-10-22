@@ -96,6 +96,7 @@ changes before registering or editing work.
   Limits: Measured usage exists only after a model has run on this PC; older brush channels have no kind and no icon; the CPU figure is the shared machine load.
   Artifacts: src/{ShortcutsPanel,StemTimeline,main,ModelPicker}.tsx, src/{usage,model-info,shortcuts}.mjs, src/styles.css, electron/{main,separation,projects}.mjs, tests, package.json.
   Follow-up: the desktop app and its dev loop no longer copy their integration into custom_nodes/StemStudio when the node pack is installed in another custom_nodes folder (electron/node-pack.mjs). Reason: the dev loop overwrote the node pack's files in the same folder, so the pack's sidebar tab was missing in ComfyUI.
+  Follow-up (page zoom): in a browser the layout scale is CSS zoom, so popups placed from pointer coordinates landed far from the pointer (tooltips below it, context menus off screen). src/page-zoom.mjs gives the zoom; tooltips, channel/take/delete menus, the preview menu and the floating preview drag and resize now convert screen pixels to the zoomed units, and context menus are measured and moved back inside the window (scrollbar if the window is shorter than the menu). Electron is unaffected (zoom 1). Not run in a browser.
   Next: User verifies.
 
 ### W-20261022-44: Node pack split into its own repository
