@@ -97,6 +97,7 @@ changes before registering or editing work.
   Artifacts: src/{ShortcutsPanel,StemTimeline,main,ModelPicker}.tsx, src/{usage,model-info,shortcuts}.mjs, src/styles.css, electron/{main,separation,projects}.mjs, tests, package.json.
   Follow-up: the desktop app and its dev loop no longer copy their integration into custom_nodes/StemStudio when the node pack is installed in another custom_nodes folder (electron/node-pack.mjs). Reason: the dev loop overwrote the node pack's files in the same folder, so the pack's sidebar tab was missing in ComfyUI.
   Follow-up (page zoom): in a browser the layout scale is CSS zoom, so popups placed from pointer coordinates landed far from the pointer (tooltips below it, context menus off screen). src/page-zoom.mjs gives the zoom; tooltips, channel/take/delete menus, the preview menu and the floating preview drag and resize now convert screen pixels to the zoomed units, and context menus are measured and moved back inside the window (scrollbar if the window is shorter than the menu). Electron is unaffected (zoom 1). Not run in a browser.
+  Follow-up (dialog fit): dialogs, the Help panel and context menus take their maximum height divided by the page zoom (--page-zoom, set by the browser adapter; 1 in Electron), so they fit the window at any layout scale. The Models page uses auto-fit columns and compact cards so all ten fit one screen at normal sizes. Not run in the app.
   Next: User verifies.
 
 ### W-20261022-44: Node pack split into its own repository
