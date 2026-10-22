@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir, rename, copyFile, stat, realpath } from 'no
 import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { channelEdit } from '../src/clip-edits.mjs';
+import { validGroups } from '../src/channel-groups.mjs';
 import { nativePath, nativeRelative } from './native-media.mjs';
 import { isSourcePath } from './media-types.mjs';
 
@@ -46,6 +47,7 @@ function view(value = {}) {
   }
   if (result.timelines) for (const timeline of Object.values(result.timelines)) {
     if (!timeline || !Array.isArray(timeline.collapsed) || !timeline.collapsed.every(id => typeof id === 'string') || !timeline.mix || typeof timeline.mix !== 'object' || !['zoom', 'waveHeight', 'scrollLeft', 'scrollTop'].every(key => Number.isFinite(timeline[key]))) throw Error('Invalid project timeline.');
+    if (timeline.groups !== undefined && !validGroups(timeline.groups)) throw Error('Invalid channel groups.');
     if (timeline.edits) for (const edit of Object.values(timeline.edits)) channelEdit(edit, 864000);
     for (const px of [timeline.rowHeight, ...Object.values(timeline.rowHeights || {})]) if (px !== undefined && !(Number.isFinite(px) && px >= 24 && px <= 400)) throw Error('Invalid channel height.');
     for (const mix of Object.values(timeline.mix)) if (!mix || typeof mix.mute !== 'boolean' || typeof mix.solo !== 'boolean' || !Number.isFinite(mix.level) || mix.level < 0 || mix.level > 1) throw Error('Invalid channel mix.');
