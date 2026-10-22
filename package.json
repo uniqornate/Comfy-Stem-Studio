@@ -1,6 +1,6 @@
 {
   "name": "stem-studio",
-  "version": "0.12.10",
+  "version": "0.12.11",
   "private": true,
   "description": "Local video soundtrack cleanup powered by ComfyUI",
   "author": "Stem Studio contributors",

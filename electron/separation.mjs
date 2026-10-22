@@ -253,7 +253,7 @@ export class Separation {
       if (!path) { path = join(directory, `${channel.key}.flac`); await channel.output.toFile(path); }
       const info = await stat(path); if (info.size === 0) throw new Error(`${channel.label} output was empty.`);
       const id = randomUUID(); this.outputs.set(id, { path, native, name: options.parentId ? `${options.parentId.slice(0, 8)}-${channel.key}-${id.slice(0, 6)}.flac` : `${channel.key}.flac` });
-      stems.push({ id, label: channel.label, size: info.size, url: this.expose(path), ...(options.parentId ? { parentId: options.parentId } : {}) });
+      stems.push({ id, label: channel.label, size: info.size, url: this.expose(path), ...(options.parentId ? { parentId: options.parentId } : {}), ...(options.mode === 'brush' ? { kind: 'brush' } : {}) });
     }
     this.state = { phase: 'complete', message: `${selected.length} channels ready. Preview or save each channel, or download all.`, stems, canCancel: false, runId: randomUUID(), parentId: options.parentId, rootRunId: options.rootRunId, model: ['uss', 'sam'].includes(options.mode) ? `${options.mode.toUpperCase()} · ${options.target}` : options.mode === 'guidesep' ? `GuideSep · ${options.target}` : options.mode === 'brush' ? `Brush · ${String(options.target).slice(0, 40)}` : options.mode === 'music' ? 'Music · 6 stems' : options.model || 'mrx' };
   }

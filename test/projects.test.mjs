@@ -124,3 +124,15 @@ test('native graph scopes every model output, including USS All, to the project 
   assert.equal(stemWorkflow({ mode: 'uss', target: 'All', outputPrefix })['2'].inputs.filename_prefix, outputPrefix);
   assert.throws(() => stemWorkflow({ outputPrefix: '../elsewhere' }), /Invalid project output prefix/);
 });
+
+test('a renamed channel keeps its file and a brush channel keeps its kind across restart', async t => {
+  const f = await fixture(t);
+  f.stem.kind = 'brush';
+  await f.projects.save(f.payload);
+  const renamed = { ...f.payload, runs: [{ ...f.run, stems: [{ ...f.stem, label: 'Door slam, close' }] }] };
+  await f.projects.save(renamed);
+  const fresh = f.make(), session = await fresh.projects.boot();
+  assert.equal(session.runs[0].stems[0].label, 'Door slam, close');
+  assert.equal(session.runs[0].stems[0].kind, 'brush');
+  assert.equal(session.runs[0].stems[0].missing, false);
+});

@@ -125,7 +125,7 @@ export class Projects {
         const canonical = path ? await realpath(path).catch(() => null) : null;
         const exists = canonical && (stem.native || inside(await realpath(dirname(this.path)), canonical)) && (await stat(canonical)).isFile();
         if (exists) this.separation.outputs.set(stem.id, { path: canonical, native: stem.native, name: `${stem.label.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)}-${stem.id.slice(0, 8)}.flac` });
-        stems.push({ id: stem.id, label: stem.label, size: stem.size, ...(stem.parentId ? { parentId: stem.parentId } : {}), url: exists ? this.expose(canonical) : '', missing: !exists });
+        stems.push({ id: stem.id, label: stem.label, size: stem.size, ...(stem.parentId ? { parentId: stem.parentId } : {}), ...(stem.kind === 'brush' ? { kind: 'brush' } : {}), url: exists ? this.expose(canonical) : '', missing: !exists });
         if (!exists) warnings.push(`Missing channel: ${stem.label}`);
       }
       runs.push({ ...run, stems });
@@ -160,7 +160,9 @@ export class Projects {
           await mkdir(dirname(destination), { recursive: true });
           await copyFile(output.path, `${destination}.part`); await rename(`${destination}.part`, destination);
         }
-        stems.push(existing || { id: stem.id, label: String(stem.label).slice(0, 160), size: stem.size, ...(output?.native ? { native: output.native } : { file }), ...(stem.parentId ? { parentId: stem.parentId } : {}) });
+        // A renamed channel keeps its stored file; only the label follows the interface.
+        const label = String(stem.label).slice(0, 160) || 'Channel';
+        stems.push(existing ? { ...existing, label } : { id: stem.id, label, size: stem.size, ...(output?.native ? { native: output.native } : { file }), ...(stem.parentId ? { parentId: stem.parentId } : {}), ...(stem.kind === 'brush' ? { kind: 'brush' } : {}) });
       }
       durable.push({ runId: run.runId, model: String(run.model || ''), phase: 'complete', message: '', canCancel: false, stems });
     }
