@@ -48,6 +48,7 @@ function view(value = {}) {
   if (result.timelines) for (const timeline of Object.values(result.timelines)) {
     if (!timeline || !Array.isArray(timeline.collapsed) || !timeline.collapsed.every(id => typeof id === 'string') || !timeline.mix || typeof timeline.mix !== 'object' || !['zoom', 'waveHeight', 'scrollLeft', 'scrollTop'].every(key => Number.isFinite(timeline[key]))) throw Error('Invalid project timeline.');
     if (timeline.groups !== undefined && !validGroups(timeline.groups)) throw Error('Invalid channel groups.');
+    if (timeline.channelColors !== undefined && (!timeline.channelColors || typeof timeline.channelColors !== 'object' || Array.isArray(timeline.channelColors) || !Object.values(timeline.channelColors).every(hex => typeof hex === 'string' && /^#[0-9a-f]{6}$/i.test(hex)))) throw Error('Invalid channel colors.');
     if (timeline.edits) for (const edit of Object.values(timeline.edits)) channelEdit(edit, 864000);
     for (const px of [timeline.rowHeight, ...Object.values(timeline.rowHeights || {})]) if (px !== undefined && !(Number.isFinite(px) && px >= 24 && px <= 400)) throw Error('Invalid channel height.');
     for (const mix of Object.values(timeline.mix)) if (!mix || typeof mix.mute !== 'boolean' || typeof mix.solo !== 'boolean' || !Number.isFinite(mix.level) || mix.level < 0 || mix.level > 1) throw Error('Invalid channel mix.');
