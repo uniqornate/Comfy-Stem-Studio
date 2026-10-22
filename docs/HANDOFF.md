@@ -85,6 +85,7 @@ changes before registering or editing work.
   Follow-up (grain final): the chosen grain values are now the defaults (strength 0.265, size 0.5, contrast 0.7, overlay blend, monochrome, still, pattern 56) and the temporary Grain tuner panel is gone; the grain layer (with the video cut out) is always on. Overlay blend over the whole window may cost playback smoothness on weak GPUs; not measured. Not run in an app.
   Follow-up (scrollbar): the hidden scrollbar rule now also covers #root, which is the element that scrolls (html and body alone were not enough in the node pack); scrolling itself still works. Not run in a browser.
   Follow-up (F11, mouse icons): F11 toggles full screen again (the removed application menu had carried it; handled in electron/main.mjs beside F5 and F12) and is listed in the shortcuts. Mouse words in the shortcut list (Click, Right-click, Double-click, Drag, Middle-drag, Wheel) show a small inline SVG mouse with the pressed button filled, in the group colour; no icon package. Not run in an app.
+  Follow-up (no flicker on new channels): when a channel is added the timeline used to clear its rows and bring them back after the new waveform was read. It now keeps the rows already on screen (only removed channels leave) while the new one is read, so existing channels no longer vanish. Playback still pauses, as before. Not run in an app.
   Next: User verifies; sync the integration and restart ComfyUI, download the model from the 6-Stem dialog, report quality.
 
 ### W-20261019-41: Brush models
