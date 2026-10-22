@@ -50,14 +50,16 @@ const ClipWave = memo(function ClipWave({ label, data, peak, path, duration, cli
   const d = useMemo(() => {
     if (!active.length) return path;
     const parts: string[] = [];
-    for (let i = first; i < last; i++) {
+    // The whole source is drawn, not only the clip's window, so trimming a clip back out finds the picture already there.
+    for (let i = 0; i < data.length; i++) {
       const time = (i + .5) / data.length * total + shift, region = active.find(item => time >= item.start && time < item.end);
       const level = Math.min(16, data[i] / peak * (region ? 10 ** (region.db / 20) : 1));
       parts.push(`M${i},${40 - level * 40}v${level * 80}`);
     }
     return parts.join(' ');
   }, [active.map(region => `${region.start}:${region.end}:${region.db}`).join('|'), path, data, peak, first, last, total, shift]);
-  return <svg viewBox={`${clip.start / total * data.length} 0 ${(clip.end - clip.start) / total * data.length} 80`} preserveAspectRatio="none" aria-label={`${label} audio waveform`}><path style={{ transform: 'scaleY(var(--wave-height, .7))', transformOrigin: 'center', transformBox: 'view-box' }} d={d} fill="none" stroke="currentColor" strokeWidth="1"/></svg>;
+  const view = `${clip.start / total * data.length} 0 ${(clip.end - clip.start) / total * data.length} 80`;
+  return <svg viewBox={view} data-view={view} preserveAspectRatio="none" aria-label={`${label} audio waveform`}><path style={{ transform: 'scaleY(var(--wave-height, .7))', transformOrigin: 'center', transformBox: 'view-box' }} d={d} fill="none" stroke="currentColor" strokeWidth="1"/></svg>;
 });
 function TimelineScrub({ transport, duration }: { transport: MediaTransport; duration: number }) {
   const position = usePosition(transport);
@@ -184,7 +186,7 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [playing, metering, tracks, collapsed, transport]);
   useEffect(() => { if (scroll.current && !loading) { scroll.current.scrollLeft = viewRef.current.scrollLeft; scroll.current.scrollTop = viewRef.current.scrollTop; } }, [loading]);
-  const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move' | 'copy'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect; element?: HTMLElement | null; wave?: { placed: number; pxPerSecond: number }; latest?: ChannelEdit } | null>(null);
+  const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move' | 'copy'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect; element?: HTMLElement | null; wave?: { pxPerSecond: number }; latest?: ChannelEdit } | null>(null);
   const editFrame = useRef<number | null>(null);
   const [gainDragging, setGainDragging] = useState(false);
   const dragSnapshot = useRef<Snapshot | null>(null);
@@ -293,7 +295,7 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
   }, [transport]);
   useEffect(() => { const key = (event: KeyboardEvent) => { if (!event.ctrlKey || event.key.toLowerCase() !== 'b' || event.repeat || document.querySelector('.modal-backdrop')) return; if ((event.target as HTMLElement)?.matches('input,textarea,[contenteditable=true]')) return; event.preventDefault(); splitAll.current(); }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [transport]);
   // Drag-time overrides on waveform pictures are removed once React has drawn the new clip, so there is no frame in between.
-  const clearDirect = () => section.current?.querySelectorAll('svg[data-direct]').forEach(element => { element.removeAttribute('data-direct'); element.removeAttribute('style'); });
+  const clearDirect = () => section.current?.querySelectorAll('svg[data-direct]').forEach(element => { element.removeAttribute('data-direct'); element.removeAttribute('style'); const view = (element as SVGElement).dataset.view; if (view) element.setAttribute('viewBox', view); });
   useLayoutEffect(clearDirect, [edits]);
   function editStart(event: React.PointerEvent<HTMLElement>, stem: Stem, requested: 'gain' | 'start' | 'end' | 'move', id?: string) {
     if (event.button !== 0 || !duration) return;
@@ -305,15 +307,16 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     const initial = channelEdit(editsRef.current[stem.id], duration);
     const moving = kind === 'move' || kind === 'copy' ? initial.clips.find(clip => clip.id === id) : undefined;
     const grab = moving ? pointerTime(event.clientX, lane.getBoundingClientRect().left, lane.getBoundingClientRect().width, duration) - placedStart(moving) : 0;
-    const clip = event.currentTarget.closest('.waveform-clip') as HTMLElement | null, base = initial.clips.find(item => item.id === id);
+    const clip = event.currentTarget.closest('.waveform-clip') as HTMLElement | null, base = initial.clips.find(item => item.id === id), track = tracks.find(item => item.stem.id === stem.id);
     // Trimming and moving a clip repaint only that clip's box while the pointer moves; the timeline state, the other rows and the
     // audio are updated once on release.
     const direct = kind === 'start' || kind === 'end' || kind === 'move';
-    // The waveform picture is not redrawn while dragging: it keeps its pixel size on its own layer and the clip box only
-    // clips it (trim) or carries it along (move). A dense waveform is expensive to rasterise, so this is what keeps it smooth.
-    const picture = direct ? clip?.querySelector('svg') as SVGElement | null : null;
-    if (picture && base) { picture.dataset.direct = '1'; picture.style.width = `${(base.end - base.start) / duration * lane.getBoundingClientRect().width}px`; picture.style.maxWidth = 'none'; picture.style.willChange = 'transform'; }
-    editDrag.current = { kind, stem, id, grab, y: event.clientY, db: gainAt(initial, selection ? (selection.start + selection.end) / 2 : transport.snapshot().position), initial, rect: lane.getBoundingClientRect(), ...(direct && clip && base ? { element: clip, wave: { placed: placedStart(base), pxPerSecond: lane.getBoundingClientRect().width / duration } } : {}) };
+    // While a clip is trimmed or moved, its waveform picture is the whole source audio on its own layer, drawn once and left
+    // alone. The clip box masks it, so material that is trimmed away is already there when the edge is dragged back out. A
+    // dense waveform is expensive to rasterise, which is why the picture is never redrawn during the drag.
+    const picture = direct ? clip?.querySelector('svg') as SVGElement | null : null, pxPerSecond = lane.getBoundingClientRect().width / duration;
+    if (picture && base && track) { picture.dataset.direct = '1'; picture.setAttribute('viewBox', `0 0 ${track.peaks.length} 80`); picture.style.width = `${track.duration * pxPerSecond}px`; picture.style.maxWidth = 'none'; picture.style.willChange = 'transform'; picture.style.transform = `translateX(${-base.start * pxPerSecond}px)`; }
+    editDrag.current = { kind, stem, id, grab, y: event.clientY, db: gainAt(initial, selection ? (selection.start + selection.end) / 2 : transport.snapshot().position), initial, rect: lane.getBoundingClientRect(), ...(direct && clip && base && track ? { element: clip, wave: { pxPerSecond } } : {}) };
     event.currentTarget.setPointerCapture(event.pointerId); setGainDragging(kind === 'gain');
   }
   function editMove(event: React.PointerEvent<HTMLElement>) {
@@ -327,7 +330,7 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
       if (clip) {
         drag.element.style.left = `${placedStart(clip) / duration * 100}%`; drag.element.style.width = `${(clip.end - clip.start) / duration * 100}%`;
         const picture = drag.element.querySelector('svg') as SVGElement | null;
-        if (picture) picture.style.transform = drag.kind === 'start' ? `translateX(${(drag.wave.placed - placedStart(clip)) * drag.wave.pxPerSecond}px)` : '';
+        if (picture) picture.style.transform = `translateX(${-clip.start * drag.wave.pxPerSecond}px)`;
       }
       return;
     }
