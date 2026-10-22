@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ArrowDownToLine, Layers, Mic, Paintbrush, Trash2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2, Minimize2, Repeat2, LockKeyhole, X, ChevronDown, ChevronRight, Crosshair, ScanSearch, Film, Scissors } from 'lucide-react';
 import { fitEdit as channelEdit, splitEdit, trimEdit, moveEdit, placedStart, gainEdit, gainAt, placeCopy, clipAt, type ChannelEdit } from './clip-edits.mjs';
 import { pointerTime } from './timeline-geometry.mjs';
@@ -184,7 +184,7 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [playing, metering, tracks, collapsed, transport]);
   useEffect(() => { if (scroll.current && !loading) { scroll.current.scrollLeft = viewRef.current.scrollLeft; scroll.current.scrollTop = viewRef.current.scrollTop; } }, [loading]);
-  const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move' | 'copy'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect; element?: HTMLElement | null; wave?: { length: number; total: number }; latest?: ChannelEdit } | null>(null);
+  const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move' | 'copy'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect; element?: HTMLElement | null; wave?: { placed: number; pxPerSecond: number }; latest?: ChannelEdit } | null>(null);
   const editFrame = useRef<number | null>(null);
   const [gainDragging, setGainDragging] = useState(false);
   const dragSnapshot = useRef<Snapshot | null>(null);
@@ -292,6 +292,9 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [transport]);
   useEffect(() => { const key = (event: KeyboardEvent) => { if (!event.ctrlKey || event.key.toLowerCase() !== 'b' || event.repeat || document.querySelector('.modal-backdrop')) return; if ((event.target as HTMLElement)?.matches('input,textarea,[contenteditable=true]')) return; event.preventDefault(); splitAll.current(); }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, [transport]);
+  // Drag-time overrides on waveform pictures are removed once React has drawn the new clip, so there is no frame in between.
+  const clearDirect = () => section.current?.querySelectorAll('svg[data-direct]').forEach(element => { element.removeAttribute('data-direct'); element.removeAttribute('style'); });
+  useLayoutEffect(clearDirect, [edits]);
   function editStart(event: React.PointerEvent<HTMLElement>, stem: Stem, requested: 'gain' | 'start' | 'end' | 'move', id?: string) {
     if (event.button !== 0 || !duration) return;
     const kind = requested === 'move' && event.altKey && !event.shiftKey && !brushRef.current.brushMode ? 'copy' : requested;
@@ -302,11 +305,15 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     const initial = channelEdit(editsRef.current[stem.id], duration);
     const moving = kind === 'move' || kind === 'copy' ? initial.clips.find(clip => clip.id === id) : undefined;
     const grab = moving ? pointerTime(event.clientX, lane.getBoundingClientRect().left, lane.getBoundingClientRect().width, duration) - placedStart(moving) : 0;
-    const track = tracks.find(item => item.stem.id === stem.id), clip = event.currentTarget.closest('.waveform-clip') as HTMLElement | null;
+    const clip = event.currentTarget.closest('.waveform-clip') as HTMLElement | null, base = initial.clips.find(item => item.id === id);
     // Trimming and moving a clip repaint only that clip's box while the pointer moves; the timeline state, the other rows and the
     // audio are updated once on release.
     const direct = kind === 'start' || kind === 'end' || kind === 'move';
-    editDrag.current = { kind, stem, id, grab, y: event.clientY, db: gainAt(initial, selection ? (selection.start + selection.end) / 2 : transport.snapshot().position), initial, rect: lane.getBoundingClientRect(), ...(direct && clip && track ? { element: clip, wave: { length: track.peaks.length, total: Math.max(track.duration, .001) } } : {}) };
+    // The waveform picture is not redrawn while dragging: it keeps its pixel size on its own layer and the clip box only
+    // clips it (trim) or carries it along (move). A dense waveform is expensive to rasterise, so this is what keeps it smooth.
+    const picture = direct ? clip?.querySelector('svg') as SVGElement | null : null;
+    if (picture && base) { picture.dataset.direct = '1'; picture.style.width = `${(base.end - base.start) / duration * lane.getBoundingClientRect().width}px`; picture.style.maxWidth = 'none'; picture.style.willChange = 'transform'; }
+    editDrag.current = { kind, stem, id, grab, y: event.clientY, db: gainAt(initial, selection ? (selection.start + selection.end) / 2 : transport.snapshot().position), initial, rect: lane.getBoundingClientRect(), ...(direct && clip && base ? { element: clip, wave: { placed: placedStart(base), pxPerSecond: lane.getBoundingClientRect().width / duration } } : {}) };
     event.currentTarget.setPointerCapture(event.pointerId); setGainDragging(kind === 'gain');
   }
   function editMove(event: React.PointerEvent<HTMLElement>) {
@@ -319,14 +326,15 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
       const clip = next.clips.find(item => item.id === drag.id);
       if (clip) {
         drag.element.style.left = `${placedStart(clip) / duration * 100}%`; drag.element.style.width = `${(clip.end - clip.start) / duration * 100}%`;
-        drag.element.querySelector('svg')?.setAttribute('viewBox', `${clip.start / drag.wave.total * drag.wave.length} 0 ${(clip.end - clip.start) / drag.wave.total * drag.wave.length} 80`);
+        const picture = drag.element.querySelector('svg') as SVGElement | null;
+        if (picture) picture.style.transform = drag.kind === 'start' ? `translateX(${(drag.wave.placed - placedStart(clip)) * drag.wave.pxPerSecond}px)` : '';
       }
       return;
     }
     // Gain and copy change several parts of the row, so they go through state, at most once per frame.
     if (editFrame.current === null) editFrame.current = requestAnimationFrame(() => { editFrame.current = null; const current = editDrag.current; if (current?.latest) { const edit = current.latest; setEdits(previous => ({ ...previous, [current.stem.id]: edit })); } });
   }
-  function editEnd(event: React.PointerEvent<HTMLElement>) { if (!editDrag.current) return; event.stopPropagation(); const finished = editDrag.current; if (editFrame.current !== null) { cancelAnimationFrame(editFrame.current); editFrame.current = null; } if (finished.latest) { const edit = finished.latest; setEdits(previous => ({ ...previous, [finished.stem.id]: edit })); } editDrag.current = null; dragSnapshot.current = null; setGainDragging(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }
+  function editEnd(event: React.PointerEvent<HTMLElement>) { if (!editDrag.current) return; event.stopPropagation(); const finished = editDrag.current; if (editFrame.current !== null) { cancelAnimationFrame(editFrame.current); editFrame.current = null; } if (finished.latest) { const edit = finished.latest; setEdits(previous => ({ ...previous, [finished.stem.id]: edit })); } else clearDirect(); editDrag.current = null; dragSnapshot.current = null; setGainDragging(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }
   const seek = (at: number) => transport.seek(at);
   function point(event: React.PointerEvent<HTMLElement>) { const rect = event.currentTarget.getBoundingClientRect(); return pointerTime(event.clientX, rect.left, rect.width, duration); }
   function seekPointer(event: React.PointerEvent<HTMLElement>) {
