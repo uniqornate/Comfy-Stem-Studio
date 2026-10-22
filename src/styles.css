@@ -468,3 +468,6 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .model-card dl div{grid-template-columns:50px minmax(0,1fr);gap:6px;font-size:9.5px}
 .model-card-note{font-size:9px;margin-top:4px}
 .model-measured{margin-top:7px;padding-top:6px;gap:2px 9px;font-size:9px}
+
+.all-muted{padding:2px 9px;border:1px solid #f2ff5966;border-radius:999px;background:#f2ff5914;color:var(--yellow);font:9px Consolas,monospace;letter-spacing:.4px}
+.all-muted:hover{background:#f2ff5926}

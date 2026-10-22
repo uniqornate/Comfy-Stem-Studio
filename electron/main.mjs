@@ -238,7 +238,7 @@ app.whenReady().then(async () => {
     const nativeRoot = projects.current.storage?.comfyRoot;
     return separation.start(sanitize(profile), source, { ...options, samVideoPath, referencePath, nativeRoot, outputPrefix: nativeRoot ? `StemStudio/${projects.current.id}/${randomUUID()}` : undefined });
   });
-  handle('stems:status', () => separation.snapshot());
+  handle('stems:status', () => separation.poll());
   handle('stems:cancel', () => separation.cancel());
   handle('stems:save', async (id, edits, profile) => {
     const output = separation.output(id);

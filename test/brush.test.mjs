@@ -69,3 +69,19 @@ test('brush job returns one new channel without a parent and is refused when the
   await blocked.start(profile, audio, { mode: 'brush', target: 'x', brush }); await blocked.pending;
   assert.equal(blocked.snapshot().phase, 'failed'); assert.match(blocked.snapshot().message, /sound model/);
 });
+
+test('a finished job the interface never read is handed over once when the next job starts', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'stemstudio-missed-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const audio = join(root, 'source.flac'); await writeFile(audio, 'source');
+  const client = { assets: { fromFile: path => path }, workflows: { fromJson: graph => ({ graph, setInput() {} }) }, submit: async () => ({ status: 'succeeded', refresh: async () => {}, outputs: [{ nodeId: '10', type: 'audio', name: 'brush_00001_.flac', toFile: path => writeFile(path, 'painted') }] }) };
+  const profile = { comfyUrl: 'http://127.0.0.1:8188', proxyUrl: 'http://127.0.0.1:8189' };
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, brush: true, brushModel: true, brushModels: { small: true } }), makeClient: () => client });
+  await runner.start(profile, audio, { mode: 'brush', target: 'one', rootRunId: 'take', brush }); await runner.pending;
+  const first = runner.snapshot().runId;
+  await runner.start(profile, audio, { mode: 'brush', target: 'two', rootRunId: 'take', brush }); await runner.pending;
+  const polled = runner.poll();
+  assert.equal(polled.earlier?.length, 1); assert.equal(polled.earlier[0].runId, first); assert.equal(polled.stems[0].label, 'two');
+  assert.equal(runner.poll().earlier, undefined, 'handed over once');
+  await runner.start(profile, audio, { mode: 'brush', target: 'three', rootRunId: 'take', brush }); await runner.pending;
+  assert.equal(runner.poll().earlier, undefined, 'a result that was read is not handed over again');
+});

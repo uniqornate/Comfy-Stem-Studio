@@ -90,7 +90,7 @@ export function stemWorkflow(options = {}) {
   }
   return graph;
 }
-export async function engineStatus(profile, fetchImpl = fetch) {
+async function probeEngine(profile, fetchImpl = fetch) {
   try {
     const nodes = await audioNodes(normalizeEndpoint(profile.comfyUrl), fetchImpl);
     const missing = ['LoadAudio', 'StemStudioSeparate', 'SaveAudio'].filter(name => !nodes[name]);
@@ -99,6 +99,17 @@ export async function engineStatus(profile, fetchImpl = fetch) {
     return { ...brushCapability(nodes), ...musicCapability(nodes), samModels: !!nodes.StemStudioSAM?.input?.optional?.model_variant, editAudio: !!nodes.StemStudioEditAudio, projectOutputs: !!nodes.StemStudioExtractAll?.input?.optional?.filename_prefix, detailRange: !!nodes.StemStudioAudioRange && !!nodes.StemStudioRestoreRange, sam: !!nodes.StemStudioSAM, guidesep: !!nodes.StemStudioGuideSep, samPrompts: !!nodes.StemStudioSAM?.input?.optional?.guidance_json, samVisual: !!nodes.StemStudioSAM?.input?.optional?.video && !!nodes.LoadVideo, ready: missing.length === 0, models, autoThreshold: !!nodes.StemStudioExtract?.input?.optional?.auto_threshold && !!nodes.StemStudioExtractAll?.input?.optional?.auto_threshold, targets: targets.filter(name => name !== 'USS models not installed' && (name !== 'All' || nodes.StemStudioExtractAll)), message: missing.length ? `Missing audio nodes: ${missing.join(', ')}. Install the integration, restart ComfyUI, then check again.` : 'Audio nodes available. Choose an installed separation model or USS target extraction.' };
   } catch (error) { return { ready: false, message: `Audio engine could not be checked: ${error.message}` }; }
 }
+const lastReady = new Map();
+// A slow or briefly unreachable ComfyUI (a running job can hold it up) must not stop work that was possible a moment ago:
+// when the probe times out, the last good answer is used and marked stale.
+export async function engineStatus(profile, fetchImpl = fetch) {
+  const result = await probeEngine(profile, fetchImpl);
+  if (result.ready) { lastReady.set(profile.comfyUrl, result); return result; }
+  const earlier = lastReady.get(profile.comfyUrl);
+  if (earlier && /timed out|timeout|aborted|fetch failed|failed to fetch|network/i.test(result.message || '')) return { ...earlier, stale: true };
+  return result;
+}
+
 export async function resolveCheckpoint(modelRoot) {
   for (const path of [join(modelRoot, 'sfc-locoformer-dnr', 'model.pth'), join(modelRoot, 'model.pth')]) {
     if ((await stat(path).catch(() => null))?.isFile()) return path;
@@ -159,13 +170,21 @@ export class Separation {
   constructor(cache, expose, options = {}) {
     this.cache = cache; this.expose = expose; this.makeClient = options.makeClient || (() => new Comfy()); this.check = options.check || engineStatus;
     this.state = { phase: 'idle', message: 'Choose a video, then separate its soundtrack.', stems: [], canCancel: false };
-    this.outputs = new Map(); this.active = false; this.job = null;
+    this.outputs = new Map(); this.active = false; this.job = null; this.delivered = ''; this.missed = [];
+  }
+  // What the interface polls: the state, plus finished jobs it never saw because the next job replaced them first (handed over once).
+  poll() {
+    const snapshot = this.snapshot();
+    if (this.state.phase === 'complete' && this.state.runId) this.delivered = this.state.runId;
+    const earlier = this.missed; this.missed = [];
+    return earlier.length ? { ...snapshot, earlier } : snapshot;
   }
   snapshot() { return structuredClone(this.state); }
   reset() { if (this.active) throw new Error('A separation job is active.'); this.outputs.clear(); this.state = { phase: 'idle', message: '', stems: [], canCancel: false }; }
   async start(profile, sourcePath, options = {}) {
     if (this.active) throw new Error('A separation job is already active.');
     if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid separation options.');
+    if (this.state.phase === 'complete' && this.state.runId && this.state.runId !== this.delivered && !this.missed.some(item => item.runId === this.state.runId)) this.missed = [...this.missed, structuredClone(this.state)].slice(-12);
     this.active = true; this.state = { phase: 'checking', message: 'Checking audio workflow…', stems: [], canCancel: false };
     if (!['sfc', 'bandit', 'mrx'].includes(options.model || 'mrx')) { this.active = false; throw new Error('Unknown model.'); }
     if (options.mode && !['stems', 'uss', 'sam', 'guidesep', 'brush', 'music'].includes(options.mode)) { this.active = false; throw new Error('Unknown operation.'); }
