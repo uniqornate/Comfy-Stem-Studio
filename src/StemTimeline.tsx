@@ -184,7 +184,8 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [playing, metering, tracks, collapsed, transport]);
   useEffect(() => { if (scroll.current && !loading) { scroll.current.scrollLeft = viewRef.current.scrollLeft; scroll.current.scrollTop = viewRef.current.scrollTop; } }, [loading]);
-  const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move' | 'copy'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect } | null>(null);
+  const editDrag = useRef<{ kind: 'gain' | 'start' | 'end' | 'move' | 'copy'; stem: Stem; id?: string; y: number; db: number; grab: number; initial: ChannelEdit; rect: DOMRect; element?: HTMLElement | null; wave?: { length: number; total: number }; latest?: ChannelEdit } | null>(null);
+  const editFrame = useRef<number | null>(null);
   const [gainDragging, setGainDragging] = useState(false);
   const dragSnapshot = useRef<Snapshot | null>(null);
   const gesture = useRef<{ kind: 'seek' | 'select'; anchor: number } | null>(null);
@@ -301,7 +302,11 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     const initial = channelEdit(editsRef.current[stem.id], duration);
     const moving = kind === 'move' || kind === 'copy' ? initial.clips.find(clip => clip.id === id) : undefined;
     const grab = moving ? pointerTime(event.clientX, lane.getBoundingClientRect().left, lane.getBoundingClientRect().width, duration) - placedStart(moving) : 0;
-    editDrag.current = { kind, stem, id, grab, y: event.clientY, db: gainAt(initial, selection ? (selection.start + selection.end) / 2 : transport.snapshot().position), initial, rect: lane.getBoundingClientRect() };
+    const track = tracks.find(item => item.stem.id === stem.id), clip = event.currentTarget.closest('.waveform-clip') as HTMLElement | null;
+    // Trimming and moving a clip repaint only that clip's box while the pointer moves; the timeline state, the other rows and the
+    // audio are updated once on release.
+    const direct = kind === 'start' || kind === 'end' || kind === 'move';
+    editDrag.current = { kind, stem, id, grab, y: event.clientY, db: gainAt(initial, selection ? (selection.start + selection.end) / 2 : transport.snapshot().position), initial, rect: lane.getBoundingClientRect(), ...(direct && clip && track ? { element: clip, wave: { length: track.peaks.length, total: Math.max(track.duration, .001) } } : {}) };
     event.currentTarget.setPointerCapture(event.pointerId); setGainDragging(kind === 'gain');
   }
   function editMove(event: React.PointerEvent<HTMLElement>) {
@@ -309,9 +314,19 @@ export function StemTimeline({ deleteChannels, brushAvailable, onBrush, closeTak
     if (dragSnapshot.current) { history.current = record(history.current, dragSnapshot.current); dragSnapshot.current = null; syncHistory(); }
     const at = pointerTime(event.clientX, drag.rect.left, drag.rect.width, duration);
     const next = drag.kind === 'copy' ? (placeCopy(drag.initial, drag.initial.clips.find(clip => clip.id === drag.id)!, at - drag.grab, duration)?.edit ?? drag.initial) : drag.kind === 'gain' && selection ? gainEdit(drag.initial, selection.start, selection.end, drag.db + (drag.y - event.clientY) / 2, duration) : drag.kind === 'move' ? moveEdit(drag.initial, drag.id!, at - drag.grab, duration) : trimEdit(drag.initial, drag.id!, drag.kind, at, duration);
-    setEdits(previous => ({ ...previous, [drag.stem.id]: next }));
+    drag.latest = next;
+    if (drag.element && drag.wave && drag.id) {
+      const clip = next.clips.find(item => item.id === drag.id);
+      if (clip) {
+        drag.element.style.left = `${placedStart(clip) / duration * 100}%`; drag.element.style.width = `${(clip.end - clip.start) / duration * 100}%`;
+        drag.element.querySelector('svg')?.setAttribute('viewBox', `${clip.start / drag.wave.total * drag.wave.length} 0 ${(clip.end - clip.start) / drag.wave.total * drag.wave.length} 80`);
+      }
+      return;
+    }
+    // Gain and copy change several parts of the row, so they go through state, at most once per frame.
+    if (editFrame.current === null) editFrame.current = requestAnimationFrame(() => { editFrame.current = null; const current = editDrag.current; if (current?.latest) { const edit = current.latest; setEdits(previous => ({ ...previous, [current.stem.id]: edit })); } });
   }
-  function editEnd(event: React.PointerEvent<HTMLElement>) { if (!editDrag.current) return; event.stopPropagation(); editDrag.current = null; dragSnapshot.current = null; setGainDragging(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }
+  function editEnd(event: React.PointerEvent<HTMLElement>) { if (!editDrag.current) return; event.stopPropagation(); const finished = editDrag.current; if (editFrame.current !== null) { cancelAnimationFrame(editFrame.current); editFrame.current = null; } if (finished.latest) { const edit = finished.latest; setEdits(previous => ({ ...previous, [finished.stem.id]: edit })); } editDrag.current = null; dragSnapshot.current = null; setGainDragging(false); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }
   const seek = (at: number) => transport.seek(at);
   function point(event: React.PointerEvent<HTMLElement>) { const rect = event.currentTarget.getBoundingClientRect(); return pointerTime(event.clientX, rect.left, rect.width, duration); }
   function seekPointer(event: React.PointerEvent<HTMLElement>) {
