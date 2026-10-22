@@ -302,7 +302,7 @@ app.whenReady().then(async () => {
     sources.set(token, path);
     return { name: path.split(/[\\/]/).pop(), size: info.size, url: `app-media://source/${token}` };
   });
-  // No application menu: its Ctrl+R (reload) would take the key that renames a channel. Reload and developer tools stay on F5, Ctrl+Shift+R and F12.
+  // No application menu: its Ctrl+R (reload) would take the key that renames a channel. Reload, full screen and developer tools stay on F5 or Ctrl+Shift+R, F11 and F12.
   Menu.setApplicationMenu(null);
   window = new BrowserWindow({ width: 1360, height: 920, minWidth: 1000, minHeight: 720, backgroundColor: '#211927', title: 'Stem Studio', autoHideMenuBar: false,
     webPreferences: { preload: join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
@@ -315,6 +315,7 @@ app.whenReady().then(async () => {
     if (input.type !== 'keyDown') return;
     const key = input.key.toLowerCase();
     if (key === 'f5' || (input.control && input.shift && key === 'r')) { event.preventDefault(); window.webContents.reloadIgnoringCache(); }
+    else if (key === 'f11' && !input.control && !input.alt && !input.shift && !input.meta) { event.preventDefault(); window.setFullScreen(!window.isFullScreen()); }
     else if (key === 'f12' || (input.control && input.shift && key === 'i')) { event.preventDefault(); window.webContents.toggleDevTools(); }
   });
   window.webContents.on('render-process-gone', () => { rendererGone = true; });
