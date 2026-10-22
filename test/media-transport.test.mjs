@@ -74,10 +74,11 @@ test('drift and playback-rate changes reschedule audio against video', async () 
   assert.deepEqual(transport.sources[0].started, [21, 0.5]); video.playbackRate = 2; video.dispatchEvent(new Event('ratechange'));
   assert.equal(transport.sources[0].playbackRate.value, 2); transport.dispose();
 });
-test('end stops audio and next play restarts video and stems together', async () => {
+test('reaching the end while playing starts over from the beginning until paused', async () => {
   const { transport, video } = fixture(); await transport.play(); video.currentTime = 10; video.ended = true; video.paused = true; video.dispatchEvent(new Event('ended'));
-  assert.equal(transport.sources.length, 0); assert.equal(transport.snapshot().position, 10);
-  await transport.play(); assert.equal(video.currentTime, 0); assert.equal(transport.snapshot().playing, true); transport.dispose();
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(video.currentTime, 0); assert.equal(video.paused, false);
+  transport.pause(); video.currentTime = 10; video.paused = true; video.ended = true; video.dispatchEvent(new Event('ended'));
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(video.paused, true); assert.equal(transport.sources.length, 0); transport.dispose();
 });
 test('pause cancels a pending AudioContext resume', async () => {
   const { transport, video, ctx } = fixture(); let resolve; ctx.resume = () => new Promise(done => { resolve = done; });

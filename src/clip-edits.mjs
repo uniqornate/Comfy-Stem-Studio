@@ -78,3 +78,23 @@ export function audibleSegments(value, duration, offset = 0, until = duration) {
   }
   return result;
 }
+// Puts a copy of a clip's audio (source range `clip.start` to `clip.end`) on the timeline as close to `desired` as free
+// space allows. Existing clips, including the one being copied, are never moved or overlapped. Returns null when no gap is
+// wide enough. `tag` keeps the new id unique.
+export function placeCopy(value, clip, desired, duration, tag = Date.now().toString(36)) {
+  const edit = fitEdit(value, duration), width = clip.end - clip.start;
+  if (!(width > 0) || edit.clips.length >= 256) return null;
+  const spans = edit.clips.map(item => [placedStart(item), placedEnd(item)]).sort((a, b) => a[0] - b[0]);
+  const gaps = []; let cursor = 0;
+  for (const [from, to] of spans) { if (from - cursor >= width - 1e-6) gaps.push([cursor, from]); cursor = Math.max(cursor, to); }
+  if (duration - cursor >= width - 1e-6) gaps.push([cursor, duration]);
+  let best = null;
+  for (const [low, high] of gaps) { const start = Math.max(low, Math.min(high - width, desired)), cost = Math.abs(start - desired); if (!best || cost < best.cost) best = { start, cost }; }
+  if (!best) return null;
+  const offset = Math.round((best.start - clip.start) * 1000) / 1000;
+  const copy = { id: `${clip.id.slice(0, 50)}-c-${tag}`, start: clip.start, end: clip.end, ...(Math.abs(offset) > 1e-6 ? { offset } : {}) };
+  const clips = [...edit.clips, copy].sort((a, b) => placedStart(a) - placedStart(b));
+  return { edit: channelEdit({ ...edit, clips }, duration), id: copy.id, start: best.start };
+}
+// The clip playing at `at`, if any.
+export function clipAt(value, at, duration) { return fitEdit(value, duration).clips.find(clip => at >= placedStart(clip) && at < placedEnd(clip)) || null; }

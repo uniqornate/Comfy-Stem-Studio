@@ -29,7 +29,8 @@ export class MediaTransport {
       listen('play', () => { this.emit(); this.loop(); });
       listen('playing', () => { this.buffering = false; this.alignAudio(); this.emit(); this.loop(); });
       listen('pause', () => { this.stopAudio(); this.stopLoop(); this.emit(); });
-      listen('ended', () => { this.stopAudio(); this.stopLoop(); if (this.loopLocked && this.selection && this.wantsPlayback) { this.seek(this.selection.start); void this.play(); } else this.emit(); });
+      // Playing to the end starts over (the selected loop, or the beginning) until the user pauses.
+      listen('ended', () => { this.stopAudio(); this.stopLoop(); if (this.wantsPlayback) { this.seek(this.loopLocked && this.selection ? this.selection.start : 0); void this.play(); } else this.emit(); });
       listen('seeking', () => { this.stopAudio(); this.emit(); });
       listen('seeked', () => { if (this.scrubTarget !== null) { this.flushScrub(); return; } if (!video.paused) this.alignAudio(); this.emit(); });
       listen('waiting', () => { this.buffering = true; this.stopAudio(); this.emit(); });

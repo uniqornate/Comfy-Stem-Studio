@@ -12,8 +12,9 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 - **6-stem music separation** with HTDemucs (vocals, drums, bass, guitar, piano, other, stereo), downloaded once from its dialog. USS is a main model tile too: pick one AudioSet sound or All and pull it from the whole source.
 - Experimental GuideSep, now in the channel extraction dialog: hum or play a reference and pull the matching instrument from a channel range. GuideSep needs a reference, so it is not an automatic music separator. Set where the reference starts, or use any extracted channel as the reference.
 - Brush models: Stable Audio 3 Small-SFX, Stable Audio 3 Medium, and MMAudio (sound that follows the picture, non-commercial weights), chosen in the brush dialog and downloaded into ComfyUI on first use.
-- Brush: drag over a region of the timeline, describe a sound, and Stable Audio 3 Small-SFX paints it into a new channel at that time, using ComfyUI's own nodes (the 3.4 GB model is downloaded on first use into `models/audio_separation/stable-audio-3`).
-- Markers (M) with section loops (double-click the ruler), export of the current mix to WAV or FLAC, batch processing of many files into one folder, a quick source check that suggests a starting model, and a `?` shortcut list.
+- Timeline editing: select several channels and delete them together, copy a clip with Alt+drag or Ctrl+C / Ctrl+V, per-channel level knobs and meters, and playback that loops until you pause it. In fullscreen timeline mode, right-click the floating preview to send it to another display. Press `?` for every shortcut.
+- Brush (press B): drag over a region of the timeline, or hold Alt and click to take the whole timeline, describe a sound, and Stable Audio 3 Small-SFX paints it into a new channel at that time, using ComfyUI's own nodes (the 3.4 GB model is downloaded on first use into `models/audio_separation/stable-audio-3`).
+- Export of the current mix to WAV or FLAC, batch processing of many files into one folder, a quick source check that suggests a starting model, and a `?` shortcut list.
 - Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
 
 ## Use the backend without the app

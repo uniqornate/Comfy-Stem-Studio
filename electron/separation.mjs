@@ -49,10 +49,21 @@ function baseWorkflow(options = {}) {
 }
 // Real progress as ComfyUI reports it (0 to 1), or null while it reports none; the interface then shows motion without a number.
 export function jobProgress(job) {
-  const progress = job.progress;
-  if (!progress) return null;
-  if (Number.isFinite(progress.value) && progress.value > 0) return Math.min(1, progress.value > 1 ? progress.value / 100 : progress.value);
-  return progress.nodesTotal ? Math.min(1, progress.nodesDone / progress.nodesTotal) : null;
+  const progress = job?.progress ?? job;
+  if (!progress || typeof progress !== 'object') return null;
+  const value = Number.isFinite(progress.value) && progress.value > 0 ? (progress.value > 1 ? progress.value / 100 : progress.value) : 0;
+  if (progress.nodesTotal) {
+    // Finished nodes plus how far the running node is (its own steps when it reports them).
+    const inner = progress.steps ? Math.min(1, progress.step / progress.steps) : value <= 1 ? value : 0;
+    return Math.min(1, ((progress.nodesDone || 0) + (Number.isFinite(inner) ? inner : 0)) / progress.nodesTotal);
+  }
+  return value > 0 ? Math.min(1, value) : null;
+}
+// The whole job on one 0 to 1 line: sending the source, ComfyUI's own work, then fetching the results.
+export function overallProgress(phase, running) {
+  if (phase === 'uploading') return 0.03;
+  if (phase === 'downloading') return 0.97;
+  return running === null || running === undefined ? null : 0.05 + 0.9 * running;
 }
 export function stemWorkflow(options = {}) {
   const graph = baseWorkflow(options);
@@ -194,14 +205,23 @@ export class Separation {
     workflow.setInput('1', 'audio', client.assets.fromFile(sourcePath));
     if (options.sam?.visual || options.brush?.video) workflow.setInput('6', 'file', client.assets.fromFile(options.samVideoPath));
     if (options.mode === 'guidesep') workflow.setInput('8', 'audio', client.assets.fromFile(options.referencePath));
-    this.state.phase = 'uploading'; this.state.message = 'Sending the source to your selected ComfyUI through the official SDK…';
+    this.state.phase = 'uploading'; this.state.progress = overallProgress('uploading'); this.state.message = 'Sending the source to your selected ComfyUI through the official SDK…';
     const job = await client.submit(workflow);
     this.job = job; this.state.canCancel = true;
-    do {
-      await job.refresh(); this.state.phase = job.status; this.state.message = `ComfyUI job: ${job.status}.`; this.state.progress = jobProgress(job);
-      if (!['queued', 'running', 'canceling'].includes(job.status)) break;
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    } while (true);
+    // The live event stream carries finer progress than polling; both feed the same value.
+    const live = new AbortController(); let latest = null; const startedAt = Date.now();
+    if (typeof job.events === 'function') void (async () => { try { for await (const event of job.events(live.signal)) if (event.kind === 'progress') latest = event; } catch { /* polling still reports */ } })();
+    try {
+      do {
+        await job.refresh(); this.state.phase = job.status; this.state.message = `ComfyUI job: ${job.status}.`;
+        this.state.progress = job.status === 'running' ? overallProgress('running', jobProgress(latest) ?? jobProgress(job)) : job.status === 'queued' ? null : this.state.progress;
+        const done = this.state.progress, elapsed = (Date.now() - startedAt) / 1000;
+        this.state.eta = done !== null && done !== undefined && done > 0.12 && done < 0.97 ? Math.round(elapsed * (1 - done) / (done - 0.05)) : null;
+        if (!['queued', 'running', 'canceling'].includes(job.status)) break;
+        await new Promise(resolve => setTimeout(resolve, 700));
+      } while (true);
+    } finally { live.abort(); }
+    this.state.eta = null;
     this.state.canCancel = false;
     if (job.status === 'canceled') { this.state.phase = 'cancelled'; this.state.message = 'Separation cancelled by ComfyUI.'; return; }
     if (job.status !== 'succeeded') throw new Error(`Separation ${job.status}: ${job.error?.message || JSON.stringify(job.error) || 'See the ComfyUI log.'}`);
@@ -222,7 +242,7 @@ export class Separation {
       if (!selected.length) throw new Error('USS All returned no detected channels. Lower the threshold or choose a specific target.');
     }
     if (selected.some(channel => !channel.output)) throw new Error('ComfyUI finished without the complete audio output set. No incomplete set was presented as successful.');
-    this.state.phase = 'downloading'; this.state.progress = 0.97; this.state.message = options.nativeRoot ? `Reading ${selected.length} native ComfyUI outputs…` : `Receiving and caching ${selected.length} stem files…`;
+    this.state.phase = 'downloading'; this.state.progress = overallProgress('downloading'); this.state.message = options.nativeRoot ? `Reading ${selected.length} native ComfyUI outputs…` : `Receiving and caching ${selected.length} stem files…`;
     const directory = join(this.cache, randomUUID()); if (!options.nativeRoot) await mkdir(directory, { recursive: true });
     const stems = [];
     for (const channel of selected) {

@@ -1,26 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeMarkers, toggleMarker, regionAt, stepMarker, removeMarker } from '../src/markers.mjs';
 import { mixPlan, encodeWav } from '../src/mixdown.mjs';
 import { analyzeSource, suggestModel } from '../src/source-profile.mjs';
 import { speechLike, musicLike, effectsLike } from '../scripts/synth-signals.mjs';
-
-test('markers stay sorted, unique, in range and toggle near an existing flag', () => {
-  assert.deepEqual(normalizeMarkers([5, 1, 1, -2, 99, NaN, 3.00004], 10), [1, 3, 5]);
-  assert.deepEqual(toggleMarker([1, 5], 3, 10), [1, 3, 5]);
-  assert.deepEqual(toggleMarker([1, 3, 5], 3.1, 10), [1, 5]);
-  assert.deepEqual(removeMarker([1, 3, 5], 3), [1, 5]);
-  assert.equal(normalizeMarkers(Array.from({ length: 400 }, (_, i) => i), 1000).length, 256);
-  assert.deepEqual(normalizeMarkers('nope'), []);
-});
-test('loop region is the span between the surrounding markers, with media edges as implicit markers', () => {
-  assert.deepEqual(regionAt([2, 6], 4, 10), { start: 2, end: 6 });
-  assert.deepEqual(regionAt([2, 6], 1, 10), { start: 0, end: 2 });
-  assert.deepEqual(regionAt([2, 6], 8, 10), { start: 6, end: 10 });
-  assert.deepEqual(regionAt([], 4, 10), { start: 0, end: 10 });
-  assert.equal(regionAt([2], 4, 0), null);
-  assert.equal(stepMarker([2, 6], 4, 1), 6); assert.equal(stepMarker([2, 6], 4, -1), 2); assert.equal(stepMarker([2, 6], 7, 1), null);
-});
 test('mix plan honours mute, selection, level, clip edits and gain regions', () => {
   const tracks = [{ id: 'a', duration: 10 }, { id: 'b', duration: 10 }, { id: 'c', duration: 10 }];
   const mix = { a: { mute: false, level: 0.5 }, b: { mute: true, level: 1 }, c: { mute: false, level: 1 } };

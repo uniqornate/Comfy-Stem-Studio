@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { channelEdit, fitEdit, splitEdit, trimEdit, moveEdit, gainEdit, audibleSegments } from '../src/clip-edits.mjs';
+import { channelEdit, fitEdit, splitEdit, trimEdit, moveEdit, gainEdit, audibleSegments, placeCopy, clipAt } from '../src/clip-edits.mjs';
 import { stemWorkflow } from '../electron/separation.mjs';
 import { AudioRenderer, editWorkflow } from '../electron/audio-render.mjs';
 import { samConfig } from '../electron/sam-manager.mjs';
@@ -101,4 +101,19 @@ test('offsets are validated and fitted to a shorter timeline', () => {
   assert.deepEqual(fitEdit(edit, 6).clips, [{ id: 'a', start: 0, end: 2, offset: 4 }]);
   assert.deepEqual(fitEdit(edit, 3).clips, []);
   assert.deepEqual(channelEdit({ clips: [{ id: 'a', start: 0, end: 4, offset: 0 }], gains: [] }, 10).clips, [{ id: 'a', start: 0, end: 4 }]);
+});
+test('a copy lands at the wanted time, in the nearest free gap, without touching other clips', () => {
+  const edit = { clips: [{ id: 'a', start: 0, end: 2 }, { id: 'b', start: 6, end: 8 }], gains: [] };
+  const clip = edit.clips[0];
+  const inGap = placeCopy(edit, clip, 3, 10, 't');
+  assert.equal(inGap.start, 3); assert.deepEqual(inGap.edit.clips.map(item => item.id), ['a', 'a-c-t', 'b']); assert.equal(inGap.edit.clips[1].offset, 3); assert.equal(inGap.edit.clips[1].start, 0);
+  assert.equal(placeCopy(edit, clip, 0.5, 10, 't').start, 2, 'pushed to the nearest side of the original');
+  assert.equal(placeCopy(edit, clip, 7, 10, 't').start, 8, 'pushed past the clip it would overlap');
+  assert.equal(placeCopy(edit, clip, 9.5, 10, 't').start, 8, 'kept inside the timeline');
+  const full = { clips: [{ id: 'a', start: 0, end: 5 }, { id: 'b', start: 5, end: 10 }], gains: [] };
+  assert.equal(placeCopy(full, full.clips[0], 4, 10, 't'), null);
+  assert.deepEqual(clipAt(edit, 6.5, 10)?.id, 'b'); assert.equal(clipAt(edit, 4, 10), null);
+  assert.equal(placeCopy(undefined, { id: 'full', start: 0, end: 4 }, 0, 10, 't'), null, 'an untouched channel fills the timeline');
+  const short = placeCopy({ clips: [{ id: 'full', start: 0, end: 4 }], gains: [] }, { id: 'full', start: 0, end: 4 }, 0, 10, 't');
+  assert.equal(short.start, 4); assert.equal(channelEdit(short.edit, 10).clips.length, 2);
 });

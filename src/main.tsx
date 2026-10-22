@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AudioLines, ArrowLeft, Keyboard, Layers, Lightbulb, Music4, ScanSearch, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
+import { AudioLines, ArrowLeft, Keyboard, Lightbulb, Music4, ScanSearch, SlidersHorizontal, Sparkles, ArrowUpRight, Check, Clapperboard, FolderOpen, Link2, LoaderCircle, Plus, Save, Settings2, ShieldCheck, Play, Pause, ZoomIn, ZoomOut, X } from 'lucide-react';
 import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportState, Stem, SAMGuidance, ProjectInfo, ProjectSession, ProjectPayload, TimelineView, ReferenceAudio } from './types';
 import './styles.css';
 const comfyWordmark = new URL('./assets/comfy/comfy-wordmark.svg', import.meta.url).href;
@@ -24,9 +24,8 @@ import { JobProgress } from './JobProgress';
 import { TargetPicker } from './TargetPicker';
 import { normalizeGuidance } from './sam-guidance.mjs';
 import { ShortcutsPanel } from './ShortcutsPanel';
-import { BatchModal } from './BatchModal';
+import { BatchPanel } from './BatchPanel';
 import { BrushModal } from './BrushModal';
-import { normalizeMarkers } from './markers.mjs';
 import { clampFloat, resizeFloat } from './float-geometry.mjs';
 import { helpKeyApplies, playbackKeyApplies } from './keys.mjs';
 import { removeChannels } from './channels.mjs';
@@ -100,10 +99,13 @@ function App() {
   const [sourceGuidance, setSourceGuidance] = useState<SAMGuidance>({});
   const [reference, setReference] = useState<ReferenceAudio | null>(null);
   const [referenceOffset, setReferenceOffset] = useState(0);
-  const [markers, setMarkers] = useState<number[]>([]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [batchOpen, setBatchOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<'single' | 'batch'>(() => { try { return localStorage.getItem('separatorTab') === 'batch' ? 'batch' : 'single'; } catch { return 'single'; } });
+  useEffect(() => { try { localStorage.setItem('separatorTab', panelTab); } catch {} }, [panelTab]);
   const [brushRegion, setBrushRegion] = useState<{ start: number; end: number } | null>(null);
+  const [previewMenu, setPreviewMenu] = useState<{ x: number; y: number } | null>(null);
+  const [externalPreview, setExternalPreview] = useState(false);
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(new Set());
   const [suggestion, setSuggestion] = useState<{ model: string; text: string; detail: string } | null>(null);
   const [sam, setSAM] = useSAMStatus(profile, samVariant);
   const [floatPosition, setFloatPosition] = useState({ x: Math.max(8, window.innerWidth - 340), y: 90 });
@@ -136,7 +138,7 @@ function App() {
   const playback = useCoarsePlayback(transport);
   useEffect(() => { transport.attachVideo(video); return () => transport.attachVideo(null); }, [transport, video]);
   const keyboardActions = useRef({ toggle: () => {}, extract: () => {} });
-  keyboardActions.current = { toggle: () => { void transport.toggle(); }, extract: () => { if (settings || exportOpen || projectsOpen || (document.querySelector('.modal-backdrop') && !modelModal && !detailOpen)) return; if (modelModal) { if (canSeparate && modelReady) { setModelModal(null); void separate(); } return; } if (detailOpen) { detailShortcut.current(); return; } if (activeOperation === 'uss' && detailRequest) void extractDetail(detailRequest, detailMode, target, lastGuidance); else void separate(); } };
+  keyboardActions.current = { toggle: () => { void transport.toggle(); }, extract: () => { if (panelTab === 'batch' || settings || exportOpen || projectsOpen || (document.querySelector('.modal-backdrop') && !modelModal && !detailOpen)) return; if (modelModal) { if (canSeparate && modelReady) { setModelModal(null); void separate(); } return; } if (detailOpen) { detailShortcut.current(); return; } if (activeOperation === 'uss' && detailRequest) void extractDetail(detailRequest, detailMode, target, lastGuidance); else void separate(); } };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       const modalOpen = !!document.querySelector('.modal-backdrop');
@@ -151,6 +153,35 @@ function App() {
     window.addEventListener('keydown', keydown, true);
     return () => window.removeEventListener('keydown', keydown, true);
   }, []);
+  // The preview can move to a window on another display. This window stays the transport; the other one follows it, muted.
+  useEffect(() => window.desktop?.onPreviewClosed(() => setExternalPreview(false)), []);
+  useEffect(() => {
+    if (!previewMenu) return;
+    const dismiss = (event: PointerEvent) => { if (!(event.target as Element)?.closest('.preview-menu')) setPreviewMenu(null); };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setPreviewMenu(null); };
+    window.addEventListener('pointerdown', dismiss, true); window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('pointerdown', dismiss, true); window.removeEventListener('keydown', key); };
+  }, [previewMenu]);
+  useEffect(() => {
+    if (!externalPreview || !window.desktop) return;
+    let last = 0, playing: boolean | null = null, timer: ReturnType<typeof setTimeout> | null = null, latest = transport.snapshot();
+    const send = () => { timer = null; last = performance.now(); void window.desktop!.syncPreview({ position: latest.position, playing: latest.playing, rate: video?.playbackRate || 1 }).catch(() => {}); };
+    const off = transport.subscribe(state => {
+      latest = state;
+      const changed = state.playing !== playing; playing = state.playing;
+      if (changed || performance.now() - last >= 300) { if (timer) clearTimeout(timer); send(); } else if (!timer) timer = setTimeout(send, 300);
+    });
+    return () => { off(); if (timer) clearTimeout(timer); };
+  }, [externalPreview, transport, video]);
+  useEffect(() => { if (externalPreview) { void window.desktop?.closePreview().catch(() => {}); setExternalPreview(false); } }, [source?.url]);
+  async function sendPreview() {
+    setPreviewMenu(null);
+    if (!window.desktop || !source) return;
+    const snapshot = transport.snapshot();
+    try { await window.desktop.openPreview(source.url, { position: snapshot.position, playing: snapshot.playing, rate: video?.playbackRate || 1 }); setExternalPreview(true); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+  }
+  async function bringPreviewBack() { setPreviewMenu(null); try { await window.desktop?.closePreview(); } catch {} setExternalPreview(false); }
   const projectInitialized = useRef(false);
   function hydrateProject(value: ProjectSession) {
     transport.pause();
@@ -171,7 +202,6 @@ function App() {
     const floating = value.view.floatPosition; if (floating && Number.isFinite(floating.x) && Number.isFinite(floating.y)) setFloatPosition({ x: Math.max(0, Math.min(window.innerWidth - 100, floating.x)), y: Math.max(0, Math.min(window.innerHeight - 60, floating.y)) });
     if (value.view.floatSize) setFloatWidth(Math.max(180, Math.min(window.innerWidth - 16, value.view.floatSize.width)));
     setExportMode(value.view.exportMode === 'tracks' ? 'tracks' : 'mix');
-    setMarkers(normalizeMarkers(value.view.markers));
     setProjectStatus('Saved'); setError(value.warnings.join(' '));
   }
   useEffect(() => {
@@ -182,7 +212,7 @@ function App() {
   useEffect(() => {
     if (pendingTransport.current && (!source?.url || video?.getAttribute('src') === source.url)) { transport.restore(pendingTransport.current); pendingTransport.current = null; }
   }, [project?.id, video, source?.url, transport]);
-  session.current = project ? { projectId: project.id, runs, view: { selectedRun, model, activeOperation, target, detailMode, samVariant, lastGuidance, detailRequest, layoutZoom, workspaceShare, timelineExpanded, floatPosition, floatSize, exportMode, markers, transport: pendingTransport.current || transport.snapshot(), timelines: timelines.current } } : null;
+  session.current = project ? { projectId: project.id, runs, view: { selectedRun, model, activeOperation, target, detailMode, samVariant, lastGuidance, detailRequest, layoutZoom, workspaceShare, timelineExpanded, floatPosition, floatSize, exportMode, transport: pendingTransport.current || transport.snapshot(), timelines: timelines.current } } : null;
   const rememberTimeline = useCallback((value: TimelineView) => { if (selectedRun) timelines.current[selectedRun] = value; }, [selectedRun]);
   const currentPayload = (): ProjectPayload | null => session.current ? { ...session.current, view: { ...session.current.view, transport: pendingTransport.current || transport.snapshot(), timelines: { ...timelines.current } } } : null;
   const savedTransport = useRef<ProjectPayload['view']['transport'] | null>(null);
@@ -260,6 +290,13 @@ function App() {
     const timer = setInterval(read, jobIdle ? 3000 : 1000);
     return () => { active = false; clearInterval(timer); };
   }, [jobIdle]);
+  // Channels a job just added slide in once; the set clears shortly after so revisiting a take does not replay it.
+  useEffect(() => {
+    if (job.phase !== 'complete' || !job.runId || !job.stems.length) return;
+    setFresh(new Set(job.stems.map(stem => stem.id)));
+    const timer = setTimeout(() => setFresh(new Set()), 6000);
+    return () => clearTimeout(timer);
+  }, [job.runId]);
   useEffect(() => {
     if (job.phase !== 'complete' || !job.runId) return;
     if (job.rootRunId) {
@@ -434,30 +471,27 @@ function App() {
     <main ref={workspaceMain} className={`workspace-main ${timelineExpanded ? 'timeline-expanded' : ''}`} style={{ '--workspace-height': `${topHeight}px` } as React.CSSProperties}>
       <div className="workspace-grid">
         <aside className="panel controls-panel">
-          <div className="panel-heading"><h2>Separator</h2><span className="badge">LOCAL</span><JobProgress job={job}/></div>
+          <div className="panel-heading"><h2>Separator</h2><div className="mode-tabs" role="tablist" aria-label="Separator mode"><button role="tab" aria-selected={panelTab === 'single'} className={panelTab === 'single' ? 'is-selected' : ''} onClick={() => setPanelTab('single')}>Single</button><button role="tab" aria-selected={panelTab === 'batch'} className={panelTab === 'batch' ? 'is-selected' : ''} disabled={!window.desktop} onClick={() => setPanelTab('batch')}>Batch</button></div><JobProgress job={job}/></div>
           <div className="control-content" tabIndex={0} aria-label="Separator controls">
-            <span className="section-label">SOURCE</span>
-            <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={20}/></span><span className="source-description"><strong>{source ? source.name : 'Add video or audio'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB · Original source` : 'MP4, MOV, MKV, MP3, WAV, FLAC and more'}</small></span><Plus size={16}/></button>
+            {panelTab === 'single' && <button className="source-card" onClick={openVideo} disabled={jobBusy || videoExporting || projectBusy || !project}><span className="source-icon"><Clapperboard size={17}/></span><span className="source-description"><strong>{source ? source.name : 'Add video or audio'}</strong><small>{source ? source.missing ? 'Missing video · relink in Projects' : `${(source.size / 1048576).toFixed(1)} MiB` : 'MP4, MOV, MKV, MP3, WAV, FLAC and more'}</small></span><Plus size={15}/></button>}
             <div className={`operation-section ${activeOperation === 'stems' ? 'is-selected' : ''}`} onFocusCapture={() => setActiveOperation('stems')} onPointerDownCapture={() => setActiveOperation('stems')}>
-            <div className="section-title"><span className="section-label">STEM SEPARATION</span><span className="subtle">{MODELS.length} MODELS</span></div>
             <ModelPicker value={model} onChange={chooseModel} disabled={jobBusy} installed={{ mrx: engine?.models ? engine.models.includes('mrx') : undefined, bandit: engine?.models ? engine.models.includes('bandit') : undefined, sfc: engine?.models ? engine.models.includes('sfc') : undefined, sam: engine ? !!engine.sam : undefined, music6: engine ? musicReady : undefined, uss: engine ? !!engine.targets?.length : undefined }}/>
-            <p className="model-caption">{modelName(model)}</p>
-            {suggestion && suggestion.model !== model && modelKind === 'stems' && <button className="model-suggestion" onClick={() => chooseModel(suggestion.model)} data-tip={`${suggestion.text}\n${suggestion.detail}`}><Lightbulb size={12}/><span>{suggestion.text} · try {MODELS.find(item => item.id === suggestion.model)?.short}</span></button>}
-            {modelKind !== 'stems' && <button className="model-summary" disabled={jobBusy} onClick={() => setModelModal(modalFor(modelKind))} data-tip="Open options"><span>{modelKind === 'prompt' ? `${samVariant === 'small-tv' ? 'Small' : 'Large'} · ${sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description?.trim() || 'Describe the sound'}` : modelKind === 'uss' ? (target === 'All' ? 'All detected sounds' : target) : 'Vocals, drums, bass, guitar, piano, other'}</span><SlidersHorizontal size={13}/></button>}
-            <button className="primary-button" disabled={modelKind !== 'stems' && !modelReady ? jobBusy : !canSeparate} onClick={() => { if (modelKind !== 'stems' && !modelReady) setModelModal(modalFor(modelKind)); else void separate(); }} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? (modelKind === 'stems' ? 'Separating stems' : 'Working…') : modelKind !== 'stems' && !modelReady ? `Set up ${setupName}` : runLabel}{activeOperation === 'stems' && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
-            <button className="quiet-button batch-link" disabled={jobBusy || !window.desktop} onClick={() => setBatchOpen(true)} data-tip={'Batch\nRun the selected model on many files, one after another.'}><Layers size={12}/> Batch files…</button>
-            {(jobBusy || job.phase === 'failed' || job.phase === 'cancelled') && <p className="helper" role="status">{job.message}</p>}
-            {job.canCancel && <button className="quiet-button" onClick={() => window.desktop?.cancelSeparation().then(setJob).catch(cause => setError(String(cause)))}>Cancel separation</button>}
+            {panelTab === 'single' ? <>
+              <button className="model-summary" disabled={jobBusy || modelKind === 'stems'} onClick={() => setModelModal(modalFor(modelKind))} data-tip={modelKind === 'stems' ? MODELS.find(item => item.id === model)?.detail : 'Open options'}><span>{modelKind === 'prompt' ? `${modelName(model)} · ${samVariant === 'small-tv' ? 'Small' : 'Large'} · ${sourceGuidance.visualOnly ? 'Visual target' : sourceGuidance.description?.trim() || 'Describe the sound'}` : modelKind === 'uss' ? `${modelName(model)} · ${target === 'All' ? 'All detected sounds' : target}` : modelName(model)}</span>{modelKind !== 'stems' && <SlidersHorizontal size={13}/>}</button>
+              {suggestion && suggestion.model !== model && modelKind === 'stems' && <button className="model-suggestion" onClick={() => chooseModel(suggestion.model)} data-tip={`${suggestion.text}\n${suggestion.detail}`}><Lightbulb size={12}/><span>{suggestion.text} · try {MODELS.find(item => item.id === suggestion.model)?.short}</span></button>}
+              <button className="primary-button" disabled={modelKind !== 'stems' && !modelReady ? jobBusy : !canSeparate} onClick={() => { if (modelKind !== 'stems' && !modelReady) setModelModal(modalFor(modelKind)); else void separate(); }} title={separationHint}>{jobBusy ? <LoaderCircle size={17} className="spin"/> : <AudioLines size={17}/>} {jobBusy ? 'Working' : modelKind !== 'stems' && !modelReady ? `Set up ${setupName}` : runLabel}{activeOperation === 'stems' && !jobBusy && <kbd>Ctrl ↵</kbd>}<ArrowUpRight size={16}/></button>
+              {!jobBusy && (job.phase === 'failed' || job.phase === 'cancelled') && <p className="helper" role="status">{job.message}</p>}
+              {job.canCancel && <button className="quiet-button" onClick={() => window.desktop?.cancelSeparation().then(setJob).catch(cause => setError(String(cause)))}>Cancel</button>}
+            </> : <BatchPanel profile={profile} options={batchOptions} label={batchLabel} blocked={batchBlocked}/>}
             </div>
-
           </div>
         </aside>
-        <section className={`panel preview-panel ${timelineExpanded && source ? 'floating-preview' : ''}`} style={timelineExpanded ? { left: floatPosition.x, top: floatPosition.y, width: floatSize.width, height: floatSize.height, maxWidth: "none", aspectRatio: "auto" } : undefined} onClick={() => { if (timelineExpanded && !floatMoved.current) void transport.toggle(); floatMoved.current = false; }}
+        <section className={`panel preview-panel ${timelineExpanded && source ? 'floating-preview' : ''} ${externalPreview ? 'is-external' : ''}`} onContextMenu={event => { if (!timelineExpanded || !source || !window.desktop) return; event.preventDefault(); setPreviewMenu({ x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 70) }); }} style={timelineExpanded ? { left: floatPosition.x, top: floatPosition.y, width: floatSize.width, height: floatSize.height, maxWidth: "none", aspectRatio: "auto" } : undefined} onClick={() => { if (timelineExpanded && !floatMoved.current) void transport.toggle(); floatMoved.current = false; }}
           onPointerDown={event => { if (!timelineExpanded || !source || event.button !== 0) return; floatMoved.current = false; floatDrag.current = { x: event.clientX, y: event.clientY, left: floatPosition.x, top: floatPosition.y, moved: false }; event.currentTarget.setPointerCapture(event.pointerId); }}
           onPointerMove={event => { const drag = floatDrag.current; if (!drag) return; const dx = event.clientX - drag.x, dy = event.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if (drag.moved) { const box = clampFloat({ ...floatSize, left: drag.left + dx, top: drag.top + dy }, { width: window.innerWidth, height: window.innerHeight }); setFloatPosition({ x: box.left, y: box.top }); } }}
           onPointerUp={event => { floatMoved.current = !!floatDrag.current?.moved; floatDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={() => { floatDrag.current = null; }} onLostPointerCapture={() => { floatDrag.current = null; }}>{timelineExpanded && ['n','s','e','w','nw','ne','sw','se'].map(edge => <div key={edge} className={`floating-edge floating-edge-${edge}`} onClick={event => event.stopPropagation()} onPointerDown={event => { event.preventDefault();event.stopPropagation();floatResize.current={edge,x:event.clientX,y:event.clientY,...floatSize,left:floatPosition.x,top:floatPosition.y};event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={resizeFloatBox} onPointerUp={event => {event.stopPropagation();floatResize.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}} onPointerCancel={() => {floatResize.current=null;}} onLostPointerCapture={() => {floatResize.current=null;}}/>)}<div className="panel-heading"><h2>Preview</h2></div><div className={`preview-stage ${source ? 'has-source' : ''}`}>{source && !source.missing ? <><video ref={setVideo} key={source.url} src={source.url} onLoadedMetadata={event => setVideoRatio(event.currentTarget.videoWidth / event.currentTarget.videoHeight || 16 / 9)} onClick={() => { if (!timelineExpanded) void transport.toggle(); }} onError={() => setMediaError(true)}/>{sourceIsAudio && <div className="audio-badge"><AudioLines size={34}/><span>{source.name}</span></div>}{mediaError && <p className="video-error">Unsupported preview codec. Try an H.264 MP4 or a common audio format.</p>}</> : <div className="empty-preview"><button className="secondary-button" onClick={openVideo}><Plus size={16}/> Open video or audio</button></div>}</div><PreviewFooter transport={transport} playback={playback}/></section>
       </div>
-      <StemTimeline deleteChannels={deleteChannels} brushAvailable={!!source && !!connected && !!engine?.ready && !jobBusy && !projectBusy} onBrush={region => setBrushRegion(region)} closeTake={closeTake} key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} markers={markers} setMarkers={setMarkers} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
+      <StemTimeline deleteChannels={deleteChannels} brushAvailable={!!source && !!connected && !!engine?.ready && !jobBusy && !projectBusy} onBrush={region => setBrushRegion(region)} closeTake={closeTake} key={`${project?.id || "scratch"}:${currentRun?.runId || "empty"}`} initialView={timelines.current[currentRun?.runId || ""]} onViewChange={rememberTimeline} details={details} detailBusy={jobBusy || !canSeparate} detailAvailable={!!engine?.detailRange} expanded={timelineExpanded} toggleExpanded={() => setTimelineExpanded(value => !value)} resize={resizeWorkspace} resetSize={() => setWorkspaceShare(0.46)} workspaceHeight={topHeight} resizeBounds={{ min: workspaceTop(workspaceAvailable, 0), max: workspaceTop(workspaceAvailable, Infinity) }} stems={shownStems} save={saveStems} takes={runs.map(run => ({ id: run.runId!, label: modelNames[run.model || ''] || run.model || 'Take' }))} selectedTake={currentRun?.runId || ''} selectTake={pickRun} freshIds={fresh} useAsReference={makeReference} exportMixFile={exportMixFile} sourceName={source?.name.replace(/\.[^.]+$/, '') || 'mix'} canExportVideo={!!source && !sourceIsAudio} exporting={exporting || videoExporting} exportVideo={mix => { exportMix.current = mix; setExportState({ phase: 'idle', progress: 0, message: '' }); setError(''); setExportOpen(true); }} independent={(currentRun?.model || job.model) === 'USS · All'} transport={transport} playback={playback}/>
       {playback.error && <p className="error-banner" role="alert">{playback.error}</p>}
       {saveNotice && !settings && <p className="save-notice" role="status"><Check size={14}/>{saveNotice}</p>}
       {error && !settings && <p className="error-banner" role="alert">{error}</p>}
@@ -475,8 +509,8 @@ function App() {
       <MusicPanel engine={engine} profile={profile} refreshEngine={refreshEngine}/>
     </ModelModal>}
     {brushRegion && <BrushModal region={brushRegion} engine={engine} profile={profile} busy={jobBusy || !canSeparate} close={() => { setBrushRegion(null); transport.clearSelection(); }} hasVideo={!!source && !sourceIsAudio} refreshEngine={refreshEngine} run={(prompt, choice) => void runBrush(prompt, choice)}/>}
+    {previewMenu && <div className="timeline-context-menu preview-menu" role="menu" aria-label="Preview actions" style={{ left: previewMenu.x, top: previewMenu.y }}>{externalPreview ? <button role="menuitem" onClick={() => void bringPreviewBack()}><Clapperboard size={14}/> Bring the preview back</button> : <button role="menuitem" onClick={() => void sendPreview()}><Clapperboard size={14}/> Send preview to another display</button>}</div>}
     {shortcutsOpen && <ShortcutsPanel close={() => setShortcutsOpen(false)}/>}
-    {batchOpen && <BatchModal profile={profile} options={batchOptions} label={batchLabel} blocked={batchBlocked} close={() => setBatchOpen(false)}/>}
     {projectsOpen && <div className="modal-backdrop"><section className="connection-modal projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-title">
       <div className="modal-top"><span className="eyebrow"><FolderOpen size={14}/> PROJECTS</span><button className="icon-button" disabled={projectBusy} onClick={() => setProjectsOpen(false)} aria-label="Close projects"><X size={17}/></button></div>
       <h2 id="projects-title">Your workspace.</h2>

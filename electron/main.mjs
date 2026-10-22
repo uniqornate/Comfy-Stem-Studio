@@ -13,6 +13,7 @@ import { BrushModelManager } from './brush-manager.mjs';
 import { MUSIC_FILES, musicFolder } from './music.mjs';
 import { brushFiles } from './brush.mjs';
 import { MMAudioManager } from './mmaudio-manager.mjs';
+import { PreviewWindow } from './preview-window.mjs';
 import { MixExporter, writeWav } from './mix-export.mjs';
 import { audioFilters, isAudioPath, isSourcePath, sourceFilters } from './media-types.mjs';
 import { Projects } from './projects.mjs';
@@ -58,6 +59,8 @@ app.whenReady().then(async () => {
   const mixExporter = new MixExporter();
   const brushModels = Object.fromEntries(['small', 'medium'].map(model => [model, new BrushModelManager({ files: brushFiles(model), label: model === 'medium' ? 'Stable Audio 3 Medium' : 'The sound model' })]));
   const mmaudio = new MMAudioManager();
+  const previewWindow = new PreviewWindow(() => window, () => { if (window && !window.isDestroyed()) window.webContents.send('preview:closed'); });
+  previewWindow.register();
   const brushOf = model => { const manager = brushModels[model ?? 'small']; if (!manager) throw Error('Unknown sound model.'); return manager; };
   const musicModel = new BrushModelManager({ files: MUSIC_FILES, folderFor: musicFolder, label: 'The music model', doneMessage: 'Music model ready. Check the engine again; ComfyUI needs no restart if the integration is already updated.' });
   audioRenderer = new AudioRenderer(join(app.getPath('userData'), 'edited-audio'));
@@ -188,6 +191,9 @@ app.whenReady().then(async () => {
   handle('brush:status', (profile, model) => brushOf(model).status(sanitize(profile)));
   handle('brush:prepare', (profile, model) => { if (separation.active) throw Error('Wait for the current job to finish first.'); return brushOf(model).start(sanitize(profile)); });
   handle('brush:cancel', model => brushOf(model).cancel());
+  handle('preview:open', (url, state) => { const media = resolveSource(url); if (!media) throw Error('The preview source is no longer available.'); return previewWindow.show(url, state); });
+  handle('preview:sync', state => previewWindow.sync(state));
+  handle('preview:close', () => previewWindow.close());
   handle('mmaudio:status', profile => mmaudio.status(sanitize(profile)));
   handle('mmaudio:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return mmaudio.start(sanitize(profile)); });
   handle('mmaudio:cancel', () => mmaudio.cancel());
@@ -310,6 +316,6 @@ app.whenReady().then(async () => {
   if (!app.isPackaged && process.argv.includes('--dev')) window.loadURL('http://127.0.0.1:5173');
   else window.loadFile(join(here, '../dist/index.html'));
 });
-app.on('before-quit', () => { samManager?.cancel(); void audioRenderer?.cancel().catch(() => {}); void videoExporter.cancel().catch(() => {}); proxyManager?.stop(); });
+app.on('before-quit', () => { try { for (const open of BrowserWindow.getAllWindows()) if (open !== window) open.destroy(); } catch {} samManager?.cancel(); void audioRenderer?.cancel().catch(() => {}); void videoExporter.cancel().catch(() => {}); proxyManager?.stop(); });
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
 app.on('window-all-closed', () => app.quit());

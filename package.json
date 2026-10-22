@@ -1,6 +1,6 @@
 {
   "name": "stem-studio",
-  "version": "0.12.9",
+  "version": "0.12.10",
   "private": true,
   "description": "Local video soundtrack cleanup powered by ComfyUI",
   "author": "Stem Studio contributors",
@@ -51,6 +51,8 @@
       "src/sam-guidance.mjs",
       "setup/quiet-process.mjs",
       "setup/download-verified.mjs",
+      "setup/comfy-install.mjs",
+      "setup/status-writer.mjs",
       "dist/**/*",
       "electron/**/*",
       "package.json",

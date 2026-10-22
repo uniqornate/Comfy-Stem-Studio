@@ -223,13 +223,9 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .settings-modal footer .primary-button{min-height:32px;padding:7px 14px;font-size:11px;border-radius:9px}
 .settings-modal .quiet-button{font-size:10.5px;padding:6px 0}
 
-/* Markers, A/B compare, mix export, batch, shortcuts */
+/* Mix export, batch, shortcuts */
 .track-ruler{overflow:visible}
-.ruler-marker{position:absolute;top:2px;transform:translateX(-50%);width:16px;height:16px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--yellow);z-index:3}
-.ruler-marker:hover{background:#f2ff5926}
-.marker-line{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed #f2ff5966;pointer-events:none;z-index:1}
 .ab-bank .icon-button.is-active{color:var(--yellow)}
-.marker-bank .icon-button:disabled{opacity:.3}
 .mix-channels{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;margin-bottom:10px}
 .mix-channels label{display:flex;align-items:center;gap:7px;margin:0;font-size:10.5px;color:var(--muted);min-width:0}
 .mix-channels label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -248,11 +244,15 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .batch-list li.is-failed{color:#ffb5b5}
 .batch-list .batch-more{color:var(--dim)}
 .batch-dot{width:5px;height:5px;margin:0 3.5px;border-radius:50%;background:var(--dim);flex-shrink:0}
-.shortcuts-modal{width:min(520px,100%)}
-.shortcut-groups{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
-.shortcut-groups h3{margin:8px 0 4px;font-size:9px;letter-spacing:1.2px;color:var(--dim);font-weight:600;text-transform:uppercase}
-.shortcut-groups p{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:10.5px;color:var(--muted)}
-.shortcut-groups p span{display:flex;gap:3px;flex-shrink:0;min-width:92px}
+.shortcuts-modal{width:min(640px,100%)}
+.shortcut-groups{columns:2;column-gap:28px}
+.shortcut-groups section{break-inside:avoid;margin:0 0 14px}
+.shortcut-groups h3{margin:0 0 6px;font-size:9px;letter-spacing:1.4px;color:var(--dim);font-weight:600;text-transform:uppercase}
+.shortcut-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:10px;padding:5px 0;border-top:1px solid var(--border);font-size:11px}
+.shortcut-keys{display:flex;flex-wrap:wrap;align-items:center;gap:4px 5px}
+.shortcut-keys i{font-style:normal;color:var(--dim);font-size:10px}
+.shortcut-combo{display:inline-flex;gap:3px;white-space:nowrap}
+.shortcut-text{color:var(--muted);line-height:1.35}
 .shortcut-groups kbd{padding:2px 6px;border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;background:var(--wash);color:var(--text);font:10px Consolas,monospace}
 .model-suggestion{max-width:100%;margin:-2px 0 10px;padding:5px 9px;gap:6px;border:1px solid #f2ff5944;border-radius:8px;background:#f2ff5910;color:var(--yellow);font-size:10px}
 .model-suggestion span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -390,3 +390,34 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .brush-models button[aria-pressed=true]{border-color:#f2ff5988;background:#f2ff590d}
 .brush-models button[aria-pressed=true] strong{color:var(--yellow)}
 .brush-parts{font-size:9.5px;color:var(--muted)}
+
+/* Channels slide in with a spring, on transform and opacity only; brush-all highlight */
+@keyframes row-spring{from{opacity:0;transform:translateY(-16px) scale(.985)}to{opacity:1;transform:none}}
+.timeline-track.is-entering>.track-controls,.timeline-track.is-entering>.waveform-lane{animation:row-spring 620ms var(--enter-delay,0ms) both;animation-timing-function:linear(0,.2 5%,.55 11%,.92 19%,1.1 28%,1.12 34%,1.05 44%,.99 56%,1.005 70%,1);will-change:transform,opacity}
+.multitrack.is-brush-all .track-ruler::before,.multitrack.is-brush-all .waveform-lane::before{content:'';position:absolute;inset:0;background:#f2ff5922;box-shadow:inset 0 0 0 1px #f2ff5966;pointer-events:none;z-index:1}
+.multitrack.is-brush-all .waveform-lane,.multitrack.is-brush-all .track-ruler{cursor:copy}
+
+/* Separator: Single/Batch tabs, compact controls, linear progress */
+.mode-tabs{display:flex;gap:2px;padding:2px;border:1px solid var(--border);border-radius:9px;background:#ffffff06}
+.mode-tabs button{padding:4px 12px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:10.5px;font-weight:600}
+.mode-tabs button.is-selected{background:#f2ff5920;color:var(--yellow)}
+.studio-workspace .control-content{padding:10px 12px 12px}
+.studio-workspace .control-content .source-card{margin:0 0 10px;min-height:0;padding:7px 9px}
+.studio-workspace .control-content .source-icon{width:32px;height:32px}
+.studio-workspace .control-content .model-picker{margin:0 0 8px}
+.studio-workspace .control-content .model-summary{margin:0 0 8px;padding:7px 10px}
+.studio-workspace .control-content .model-suggestion{margin:0 0 8px}
+.studio-workspace .control-content .helper{margin:8px 0 0}
+.studio-workspace .control-content .quiet-button{width:100%;margin-top:6px}
+.heading-progress{height:3px;background:#ffffff0d}
+.batch-panel{display:flex;flex-direction:column}
+.batch-panel .batch-model{margin:0 0 8px}
+.batch-progress{height:4px;margin:2px 0 10px;border-radius:2px;background:#ffffff10;overflow:hidden}
+.batch-progress i{display:block;height:100%;background:var(--yellow);transform-origin:left;transition:transform .4s ease}
+.batch-start{width:100%;margin-top:4px}
+
+/* Preview moved to another display */
+.studio-workspace .floating-preview.is-external .preview-stage video{visibility:hidden}
+.studio-workspace .floating-preview.is-external{background:#211927e6;border:1px dashed var(--border);border-radius:10px}
+.studio-workspace .floating-preview.is-external::after{content:'Preview on another display';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);pointer-events:none}
+.preview-menu{width:230px}

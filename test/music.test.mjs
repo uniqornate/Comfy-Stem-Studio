@@ -69,3 +69,11 @@ test('tiles: USS and six-stem music are main models and GuideSep is no longer a 
   assert.equal(MODELS.find(model => model.id === 'uss').kind, 'uss'); assert.equal(MODELS.find(model => model.id === 'music6').kind, 'music');
   assert.equal(preferences(JSON.stringify({ model: 'guidesep' })).model, 'mrx'); assert.equal(preferences(JSON.stringify({ model: 'music6' })).model, 'music6');
 });
+test('overall progress spans sending, ComfyUI work and fetching, using steps of the running node', async () => {
+  const { jobProgress, overallProgress } = await import('../electron/separation.mjs');
+  assert.equal(jobProgress({ nodesDone: 1, nodesTotal: 4, step: 5, steps: 10 }), 0.375);
+  assert.equal(jobProgress({ nodesDone: 0, nodesTotal: 2, step: 0, steps: 0, value: 0.5 }), 0.25);
+  assert.equal(jobProgress(null), null);
+  assert.equal(overallProgress('uploading'), 0.03); assert.equal(overallProgress('downloading'), 0.97);
+  assert.equal(overallProgress('running', null), null); assert.ok(Math.abs(overallProgress('running', 0.5) - 0.5) < 1e-9);
+});
