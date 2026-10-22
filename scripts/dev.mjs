@@ -1,7 +1,7 @@
 // Developer workflow: renderer HMR via Vite, Electron restarts on main-process edits,
 // and ComfyUI integration files are mirrored into the selected ComfyUI on every save.
 import { spawn } from 'node:child_process';
-import { watch, existsSync } from 'node:fs';
+import { watch, existsSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +56,13 @@ function restartElectron(name) {
   electron.restarting = true;
   spawn('taskkill', ['/PID', String(electron.pid), '/T', '/F'], { stdio: 'ignore' }).once('exit', () => setTimeout(startElectron, 400));
 }
+// Windows reports file events when the app only reads its own files (opening the preview window loads preview.js, the
+// preload scripts and preview.html), which restarted Electron on its own. Only a changed modification time counts as an edit.
+const stamps = new Map();
+const stampOf = path => { try { return statSync(path).mtimeMs; } catch { return null; } };
+(function scan(folder) { for (const entry of readdirSync(folder, { withFileTypes: true })) { const path = join(folder, entry.name); if (entry.isDirectory()) scan(path); else stamps.set(path, stampOf(path)); } })(join(root, 'electron'));
 watch(join(root, 'electron'), { recursive: true }, (_event, name) => {
+  if (name) { const path = join(root, 'electron', name), stamp = stampOf(path); if (stamps.get(path) === stamp) return; stamps.set(path, stamp); }
   clearTimeout(restartTimer); restartTimer = setTimeout(() => restartElectron(name || 'electron/'), 400);
 });
 function shutdown() {

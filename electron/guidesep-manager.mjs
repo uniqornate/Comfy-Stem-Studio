@@ -14,7 +14,7 @@ export function guidesepConfig(profile) {
 export class GuideSepManager {
   constructor(root, script, options = {}) { this.root = root; this.script = script; this.spawn = options.spawn || spawn; this.prepareRuntime = options.prepareRuntime || prepareRuntime; this.state = { phase: 'idle', message: '', detail: '' }; this.active = false; }
   async status(profile) {
-    const model = guidesepConfig(profile);
+    let model; try { model = guidesepConfig(profile); } catch { return { ...this.snapshot(), ready: false }; }
     let config; try { config = JSON.parse(await readFile(join(model, 'stem-runtime.json'), 'utf8')); } catch {}
     const ready = typeof config?.python === 'string' && (await stat(config.python).catch(() => null))?.isFile() && (await stat(join(model, 'guidesep.pt')).catch(() => null))?.size > 0;
     return { ...this.snapshot(), ready: !!ready };

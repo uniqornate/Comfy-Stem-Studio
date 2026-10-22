@@ -28,7 +28,8 @@ export function samConfig(profile, variant = 'small-tv') {
 export class SAMManager {
   constructor(root, script, options = {}) { this.root = root; this.script = script; this.spawn = options.spawn || spawn; this.prepareRuntime = options.prepareRuntime || prepareRuntime; this.state = { phase: 'idle', message: '', detail: '' }; this.active = false; }
   async status(profile, variant = 'small-tv') {
-    const model = samConfig(profile, variant);
+    // Without a local ComfyUI folder the model simply is not ready; the status poll must not raise an error every few seconds.
+    let model; try { model = samConfig(profile, variant); } catch { return { ...this.snapshot(), ready: false }; }
     let config; try { config = JSON.parse(await readFile(join(model, 'stem-runtime.json'), 'utf8')); } catch {}
     const ready = typeof config?.python === 'string' && (await stat(config.python).catch(() => null))?.isFile() && (await stat(join(model, 'checkpoint.pt')).catch(() => null))?.size > 0;
     return { ...this.snapshot(), ready: !!ready };
