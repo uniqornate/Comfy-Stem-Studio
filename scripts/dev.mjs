@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { copyIntegration } from '../electron/separation.mjs';
+import { findNodePack } from '../electron/node-pack.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
@@ -26,6 +27,9 @@ async function nodeDestination() {
 let syncTimer;
 async function syncNodes(reason) {
   try {
+    const profile = JSON.parse(await readFile(join(process.env.APPDATA || join(process.env.HOME || '', '.config'), 'stem-studio', 'connection.json'), 'utf8'));
+    const pack = await findNodePack(profile.installation);
+    if (pack) return log(`Node sync skipped: the Stem Studio node pack is installed in ${pack}.`);
     const destination = await nodeDestination();
     if (!destination) return log('Node sync skipped: no installed Stem Studio integration found. Run setup once first.');
     const { count, changed } = await copyIntegration(join(root, 'comfy_nodes', 'StemStudio'), destination);

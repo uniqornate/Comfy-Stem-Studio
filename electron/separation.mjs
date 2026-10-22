@@ -10,6 +10,7 @@ import { audioNodes } from './node-capabilities.mjs';
 import { nativeOutput, nativeRelative } from './native-media.mjs';
 import { brushGraph, brushCapability } from './brush.mjs';
 import { musicGraph, musicCapability, MUSIC_CHANNELS } from './music.mjs';
+import { findNodePack } from './node-pack.mjs';
 
 const CHANNELS = [{ key: 'dialogue', label: 'Dialogue', node: '10' }, { key: 'music', label: 'Music', node: '11' }, { key: 'effects', label: 'Effects', node: '12' }];
 function baseWorkflow(options = {}) {
@@ -139,6 +140,8 @@ export async function installEngine(profile, nodeSource, modelRoot, update = () 
   try { for await (const chunk of createReadStream(checkpoint)) { hash.update(chunk); read += chunk.length; update({ current: read }); } }
   catch { throw new Error('SFC DnR model not found. Choose the model folder used during installation.'); }
   if (hash.digest('hex') !== 'b878ea0ffe29c67401727d51cdaab8db0394178d8e0eafa9d2ca5e241fd472e2') throw new Error('The SFC checkpoint failed verification. Recheck model preparation.');
+  const pack = await findNodePack(profile.installation);
+  if (pack) return { ready: false, changed: false, message: `The Stem Studio node pack is installed in ${pack}; its nodes are used and no integration copy was made. Restart ComfyUI if you just installed it, then press Check audio engine.` };
   const destination = join(profile.installation, 'custom_nodes', 'StemStudio');
   const marker = join(destination, '.stemstudio.json');
   const existing = await stat(destination).catch(() => null);
