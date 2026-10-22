@@ -15,7 +15,7 @@ Download the latest installers from [Releases](https://github.com/uniqornate/Com
 - Timeline editing: select several channels and delete them together, copy a clip with Alt+drag or Ctrl+C / Ctrl+V, per-channel level knobs and meters, and playback that loops until you pause it. In fullscreen timeline mode, right-click the floating preview to send it to another display. Press `?` for every shortcut.
 - Brush (press B): drag over a region of the timeline, or hold Alt and click to take the whole timeline, describe a sound, and Stable Audio 3 Small-SFX paints it into a new channel at that time, using ComfyUI's own nodes (the 3.4 GB model is downloaded on first use into `models/audio_separation/stable-audio-3`).
 - Export of the current mix to WAV or FLAC, batch processing of many files into one folder, a quick source check that suggests a starting model, and a `?` shortcut list.
-- Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MKV/FLAC), plus individual or batch stem downloads.
+- Projects with autosave, last-session restore, takes for model comparison and native SaveVideo export (lossless MP4/FLAC), plus individual or batch stem downloads.
 
 ## Use the backend without the app
 

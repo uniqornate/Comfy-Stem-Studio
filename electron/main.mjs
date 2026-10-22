@@ -136,7 +136,7 @@ app.whenReady().then(async () => {
     const source = url.protocol === 'app-media:' && url.hostname === 'source' ? sources.get(url.pathname.slice(1)) : null;
     if (!source) throw new Error('Choose the original video first.');
     const stems = options.stems.map(stem => ({ ...stem, path: separation.output(stem.id).path }));
-    const format = 'mkv';
+    const format = 'mp4';
     const choice = await dialog.showSaveDialog(window, { title: 'Export video with lossless audio', defaultPath: source.replace(/\.[^./\\]+$/, '') + '-stems.' + format, filters: [{ name: 'ComfyUI video + lossless FLAC audio', extensions: [format] }] });
     if (choice.canceled) return null;
     await assertExportTarget(choice.filePath);
