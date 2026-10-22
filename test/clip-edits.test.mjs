@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { channelEdit, fitEdit, splitEdit, trimEdit, moveEdit, gainEdit, audibleSegments, placeCopy, clipAt } from '../src/clip-edits.mjs';
+import { channelEdit, fitEdit, splitEdit, trimEdit, moveEdit, gainEdit, audibleSegments, placeCopy, clipAt, removeClip } from '../src/clip-edits.mjs';
 import { stemWorkflow } from '../electron/separation.mjs';
 import { AudioRenderer, editWorkflow } from '../electron/audio-render.mjs';
 import { samConfig } from '../electron/sam-manager.mjs';
@@ -116,4 +116,13 @@ test('a copy lands at the wanted time, in the nearest free gap, without touching
   assert.equal(placeCopy(undefined, { id: 'full', start: 0, end: 4 }, 0, 10, 't'), null, 'an untouched channel fills the timeline');
   const short = placeCopy({ clips: [{ id: 'full', start: 0, end: 4 }], gains: [] }, { id: 'full', start: 0, end: 4 }, 0, 10, 't');
   assert.equal(short.start, 4); assert.equal(channelEdit(short.edit, 10).clips.length, 2);
+});
+test('removing a clip leaves silence, keeps the other clips and gains, and stays valid', () => {
+  const edit = { clips: [{ id: 'a', start: 0, end: 2 }, { id: 'b', start: 6, end: 8, offset: 1 }], gains: [{ start: 0, end: 3, db: -6 }] };
+  const left = removeClip(edit, 'a', 10);
+  assert.deepEqual(left.clips.map(clip => clip.id), ['b']); assert.equal(left.gains.length, 1); assert.doesNotThrow(() => channelEdit(left, 10));
+  assert.deepEqual(audibleSegments(left, 10).map(segment => [segment.start, segment.end]), [[7, 9]]);
+  const all = removeClip(left, 'b', 10); assert.equal(all.clips.length, 0); assert.doesNotThrow(() => channelEdit(all, 10)); assert.deepEqual(audibleSegments(all, 10), []);
+  assert.deepEqual(removeClip(edit, 'nope', 10).clips.length, 2);
+  assert.equal(removeClip(undefined, 'full', 10).clips.length, 0);
 });

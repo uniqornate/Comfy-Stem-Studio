@@ -98,3 +98,8 @@ export function placeCopy(value, clip, desired, duration, tag = Date.now().toStr
 }
 // The clip playing at `at`, if any.
 export function clipAt(value, at, duration) { return fitEdit(value, duration).clips.find(clip => at >= placedStart(clip) && at < placedEnd(clip)) || null; }
+// Removes one clip; the time it covered becomes silence. Gain regions are kept.
+export function removeClip(value, id, duration) {
+  const edit = fitEdit(value, duration);
+  return { ...edit, clips: edit.clips.filter(clip => clip.id !== id) };
+}

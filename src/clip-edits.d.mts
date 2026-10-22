@@ -11,3 +11,4 @@ export function gainAt(value: ChannelEdit | undefined, at: number): number;
 export function audibleSegments(value: ChannelEdit | undefined, duration: number, offset?: number, until?: number): { start: number; end: number; gain: number; source?: number }[];
 export function placeCopy(value: ChannelEdit | undefined, clip: { id: string; start: number; end: number; offset?: number }, desired: number, duration: number, tag?: string): { edit: ChannelEdit; id: string; start: number } | null;
 export function clipAt(value: ChannelEdit | undefined, at: number, duration: number): { id: string; start: number; end: number; offset?: number } | null;
+export function removeClip(value: ChannelEdit | undefined, id: string, duration: number): ChannelEdit;
