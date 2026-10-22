@@ -36,6 +36,14 @@ Every operation runs as a ComfyUI graph built from the `StemStudio` custom nodes
 
 SAM Audio is optional: it needs your own Hugging Face account, approval of the SAM Audio and PE-AV model pages and a read token (`hf_...`). The token is used only for preparation and is not saved.
 
+## Use it inside ComfyUI (node pack)
+
+The same workspace also exists as a ComfyUI custom node pack, with no desktop app and no API Proxy: [Comfy-Stem-Studio-Node-Pack](https://github.com/uniqornate/Comfy-Stem-Studio-Node-Pack). Clone it into `ComfyUI/custom_nodes/`, restart ComfyUI and open the Stem Studio sidebar tab. It has its own repository and releases.
+
+- What is the same: the nodes, the models and their folders (`models/audio_separation/<model>`, MMAudio in `models/mmaudio`), the timeline, brush, six-stem music, USS, SAM Audio, GuideSep, mix and video export, batch.
+- What differs: no second-display preview, browser file dialogs instead of native ones (choosing an output folder needs Chrome or Edge), projects stored in ComfyUI's user data, and no ComfyUI installer. Downloads there run through the node pack's own Python routes instead of the desktop setup.
+- Do not keep both installed in the same ComfyUI: the desktop app copies its own `custom_nodes/StemStudio`, which would clash with the node pack's copy.
+
 ## Models and licenses
 
 | Model | Use | Weights license | Open weights only? |

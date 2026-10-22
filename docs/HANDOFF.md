@@ -16,6 +16,7 @@ changes before registering or editing work.
 |---|---|---|---|---|
 | W-20261019-40 | WAITING_USER | Claude | Feedback round (0.12.8 source): USS and a new six-stem music model (HTDemucs) as main tiles in the renamed Separator panel with header progress; GuideSep moved out of the main tiles; multi-select channel delete, level knobs, channel meters, compact fold arrow, evenly filled tool buttons, floating run button; range-pick and row-size performance changes. | User checks each item in `npm run dev`, downloads the 6-stem model from its dialog (needs integration sync + ComfyUI restart for the new node) and judges stem quality and the performance changes. |
 | W-20261019-41 | WAITING_USER | Claude | Brush model choice (0.12.9 source): Stable Audio 3 Small-SFX, Medium and MMAudio (video-aware) in the brush dialog, downloaded into ComfyUI; ThinkSound not added. | User updates the integration, restarts ComfyUI, prepares MMAudio (installs a node pack and Python packages into ComfyUI) and tries each model. |
+| W-20261022-44 | WAITING_USER | Claude | Node pack moved to its own repository (https://github.com/uniqornate/Comfy-Stem-Studio-Node-Pack); this README now points to it. The desktop repository contains no node pack mode code. | User verifies the node pack in ComfyUI; the old worktree branch `claude/blissful-brahmagupta-4cab25` (node pack mode commits) can be deleted once the new repository is accepted. |
 | W-20261022-42 | WAITING_USER | Claude | Workspace round (0.12.10 source): Single/Batch tabs and linear progress in the Separator panel, B for brush, Alt whole-timeline brush, spring entry for new channels, equal row resize, markers removed, playback loops, readable shortcuts, preview on another display, Alt+drag and Ctrl+C/V clip copy, contest check. | User checks each item in `npm run dev`, with a second display for the preview; reads docs/CONTEST_CHECK.md. |
 | W-20261017-39 | WAITING_USER | Claude | Clips can be moved sideways within their channel; channels can be thinner (28 px) with compact headers (0.12.7 source). | User moves clips, plays, exports a mix and a video, and extracts from an edited channel to confirm they match; needs integration sync + ComfyUI restart for the node change. |
 | W-20261017-38 | WAITING_USER | Claude | Smoother preview while choosing a range, channel deletion, channel row heights (Alt + knob, per-channel grip) (0.12.6 source). | User drags ranges on a long video, deletes a channel with and without detail channels, and resizes rows. |
@@ -84,6 +85,16 @@ changes before registering or editing work.
   Limits: The kijai sampler takes the first 8 x seconds of the 25 fps frames for its CLIP stream, so CLIP sees the start of the region, not all of it. Pip changes your ComfyUI Python and could clash with other node packs; the dialog says so before consent. The ComfyUI Python is found only next to or inside the selected folder (python_embeded, venv, .venv). Medium's sampler settings are the Small-SFX ones and untested. MMAudio weights are non-commercial. The pack was not read in full; its node inputs were taken from nodes.py at the pinned commit.
   Artifacts: electron/{mmaudio,mmaudio-manager,brush,separation,main,node-capabilities}.mjs, electron/{preload.cjs,mmaudio-manifest.json}, comfy_nodes/StemStudio/{video_clip.py,__init__.py}, src/{BrushModal,main,types}.tsx/ts, src/styles.css, tests, README.md, docs/{MODELS,ARCHITECTURE,BRUSH_RESEARCH}.md, package.json.
   Next: User syncs the integration, restarts ComfyUI, then tries Medium and MMAudio from the brush dialog and reports quality and any node mismatch.
+
+### W-20261022-44: Node pack split into its own repository
+
+- Agent: Claude Sonnet 5.5 | Provider: Anthropic | Surface: Claude Code desktop
+  Time: 2026-10-22T21:30:00+03:00 | Work: W-20261022-44
+  Change: The node pack mode (worktree branch claude/blissful-brahmagupta-4cab25, uncommitted until today and then merged with this line's 0.12.10) was extracted into the separate repository Comfy-Stem-Studio-Node-Pack (commit b92e249 on its main). Desktop-only code stayed out of it; pure shared modules were moved to its src/shared. This repository's main was not touched by the node pack commits. README gained a node pack section.
+  Validation: In the new repository: TypeScript, build, 108 JS tests and 9 Python test files pass. This repository: no code change.
+  Limits: The two repositories now share pure modules by copy (brush, music, mmaudio constants, graph builders); a change on one side must be copied to the other by hand. The node pack was never opened in a real ComfyUI frontend.
+  Artifacts: README.md, docs/HANDOFF.md.
+  Next: User verifies the node pack; decide whether to delete the old worktree branch.
 
 ### W-20261022-42: Workspace round and contest check
 
