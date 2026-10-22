@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('desktop', Object.freeze({
   cancelBrush: model => ipcRenderer.invoke('brush:cancel', model),
   openPreview: (url, state) => ipcRenderer.invoke('preview:open', url, state),
   syncPreview: state => ipcRenderer.invoke('preview:sync', state),
+  previewStatus: () => ipcRenderer.invoke('preview:status'),
   closePreview: () => ipcRenderer.invoke('preview:close'),
   onPreviewClosed: callback => { const listener = () => callback(); ipcRenderer.on('preview:closed', listener); return () => ipcRenderer.removeListener('preview:closed', listener); },
   mmaudioStatus: profile => ipcRenderer.invoke('mmaudio:status', profile),

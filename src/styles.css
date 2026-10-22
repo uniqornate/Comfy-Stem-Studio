@@ -422,3 +422,5 @@ body{min-width:0}.layout-zoom{display:flex;align-items:center;gap:3px;border:1px
 .view-bank>.icon-button.is-active{color:var(--yellow);background:#f2ff5918}
 .waveform-clip.is-clip-picked{border-color:var(--track);box-shadow:0 0 0 1px var(--track),0 0 10px color-mix(in srgb,var(--track) 40%,transparent)}
 .waveform-clip.is-clip-picked .clip-grip{background:color-mix(in srgb,var(--track) 22%,transparent)}
+
+.topbar .brand{gap:14px}.stem-logo{height:38px;width:auto;display:block;object-fit:contain}

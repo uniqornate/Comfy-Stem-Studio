@@ -193,6 +193,7 @@ app.whenReady().then(async () => {
   handle('brush:cancel', model => brushOf(model).cancel());
   handle('preview:open', (url, state) => { const media = resolveSource(url); if (!media) throw Error('The preview source is no longer available.'); return previewWindow.show(url, state); });
   handle('preview:sync', state => previewWindow.sync(state));
+  handle('preview:status', () => ({ open: previewWindow.open, external: !!previewWindow.external }));
   handle('preview:close', () => previewWindow.close());
   handle('mmaudio:status', profile => mmaudio.status(sanitize(profile)));
   handle('mmaudio:prepare', profile => { if (separation.active) throw Error('Wait for the current job to finish first.'); return mmaudio.start(sanitize(profile)); });

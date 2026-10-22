@@ -41,6 +41,7 @@ export interface Desktop {
   openPreview(url: string, state: { position: number; playing: boolean; rate: number }): Promise<{ external: boolean }>;
   syncPreview(state: { position: number; playing: boolean; rate: number }): Promise<void>;
   closePreview(): Promise<void>;
+  previewStatus(): Promise<{ open: boolean; external: boolean }>;
   onPreviewClosed(callback: () => void): () => void;
   mmaudioStatus(profile: Profile): Promise<MMAudioState>;
   prepareMMAudio(profile: Profile): Promise<MMAudioState>;

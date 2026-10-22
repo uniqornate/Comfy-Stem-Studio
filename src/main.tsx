@@ -5,6 +5,7 @@ import type { Connection, Profile, Source, ProxyState, Engine, StemJob, ExportSt
 import './styles.css';
 const comfyWordmark = new URL('./assets/comfy/comfy-wordmark.svg', import.meta.url).href;
 const comfyIcon = comfyWordmark;
+const stemLogo = new URL('./assets/comfy/stem-studio-logo-1.png', import.meta.url).href;
 import { DetailPicker, type DetailRequest } from './DetailPicker';
 import { StemTimeline } from './StemTimeline';
 import { workspaceTop } from './timeline-geometry.mjs';
@@ -155,6 +156,8 @@ function App() {
   }, []);
   // The preview can move to a window on another display. This window stays the transport; the other one follows it, muted.
   useEffect(() => window.desktop?.onPreviewClosed(() => setExternalPreview(false)), []);
+  // A reloaded page forgets the preview window that is still open; ask the main process.
+  useEffect(() => { void window.desktop?.previewStatus().then(value => setExternalPreview(!!value.open)).catch(() => {}); }, []);
   useEffect(() => {
     if (!previewMenu) return;
     const dismiss = (event: PointerEvent) => { if (!(event.target as Element)?.closest('.preview-menu')) setPreviewMenu(null); };
@@ -467,7 +470,7 @@ function App() {
   }
   return <div className="app-shell studio-workspace">
     <TooltipLayer/>
-    <header className="topbar"><div className="brand"><img className="primary-comfy-logo" src={comfyWordmark} alt="Comfy"/><span className="stem-wordmark">Stem Studio</span></div><button className="project-switch" onClick={() => void showProjects()} title={project?.path || "Projects"} disabled={!project || projectBusy}><FolderOpen size={14}/><span>{project?.name || "Project"}</span><small>{projectStatus}</small></button><ResourceMonitor profile={profile}/><div className="topbar-right"><button className="icon-button" aria-label="Keyboard shortcuts" data-tip={'Shortcuts\n?'} onClick={() => setShortcutsOpen(true)}><Keyboard size={15}/></button><div className="layout-zoom" aria-label="Layout scale"><button className="icon-button" aria-label="Zoom layout out" disabled={layoutZoom <= 0.6} onClick={() => setLayoutZoom(value => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))}><ZoomOut size={15}/></button><button className="zoom-reset" title="Reset layout scale" onClick={() => setLayoutZoom(1)}>{Math.round(layoutZoom * 100)}%</button><button className="icon-button" aria-label="Zoom layout in" disabled={layoutZoom >= 1.5} onClick={() => setLayoutZoom(value => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))}><ZoomIn size={15}/></button></div><button className={`connection-pill ${connected ? 'online' : ''}`} onClick={() => setSettings(true)} title="Connection settings" aria-label="Connection settings"><span className="status-dot"/><Settings2 size={16}/></button></div></header>
+    <header className="topbar"><div className="brand"><img className="primary-comfy-logo" src={comfyWordmark} alt="Comfy"/><img className="stem-logo" src={stemLogo} alt="Stem Studio"/></div><button className="project-switch" onClick={() => void showProjects()} title={project?.path || "Projects"} disabled={!project || projectBusy}><FolderOpen size={14}/><span>{project?.name || "Project"}</span><small>{projectStatus}</small></button><ResourceMonitor profile={profile}/><div className="topbar-right"><button className="icon-button" aria-label="Keyboard shortcuts" data-tip={'Shortcuts\n?'} onClick={() => setShortcutsOpen(true)}><Keyboard size={15}/></button><div className="layout-zoom" aria-label="Layout scale"><button className="icon-button" aria-label="Zoom layout out" disabled={layoutZoom <= 0.6} onClick={() => setLayoutZoom(value => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))}><ZoomOut size={15}/></button><button className="zoom-reset" title="Reset layout scale" onClick={() => setLayoutZoom(1)}>{Math.round(layoutZoom * 100)}%</button><button className="icon-button" aria-label="Zoom layout in" disabled={layoutZoom >= 1.5} onClick={() => setLayoutZoom(value => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))}><ZoomIn size={15}/></button></div><button className={`connection-pill ${connected ? 'online' : ''}`} onClick={() => setSettings(true)} title="Connection settings" aria-label="Connection settings"><span className="status-dot"/><Settings2 size={16}/></button></div></header>
     <main ref={workspaceMain} className={`workspace-main ${timelineExpanded ? 'timeline-expanded' : ''}`} style={{ '--workspace-height': `${topHeight}px` } as React.CSSProperties}>
       <div className="workspace-grid">
         <aside className="panel controls-panel">
