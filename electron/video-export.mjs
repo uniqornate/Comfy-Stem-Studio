@@ -3,6 +3,7 @@ import { stat, rename, rm, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { normalizeEndpoint } from './connection.mjs';
+import { uploadLargeAudio, SAFE_UPLOAD } from './audio-source.mjs';
 
 export function validateVideoExport(stems, options) {
   if (options.format !== 'mp4' || !['mix', 'tracks'].includes(options.mode)) throw new Error('Native lossless export requires MP4 and a valid audio mode.');
@@ -49,8 +50,12 @@ export class VideoExporter {
       if (this.cancelled) throw new Error('Video export cancelled.');
       process.env.COMFY_BASE_URL = normalizeEndpoint(profile.proxyUrl);
       const client = this.makeClient(); const workflow = client.workflows.fromJson(videoWorkflow(stems, options));
-      workflow.setInput('1', 'file', client.assets.fromFile(source));
-      stems.forEach((stem, index) => workflow.setInput(String(10 + index), 'file', client.assets.fromFile(stem.path)));
+      const sourceSize = (await stat(source).catch(() => null))?.size ?? 0;
+      workflow.setInput('1', 'file', sourceSize < SAFE_UPLOAD ? client.assets.fromFile(source) : await uploadLargeAudio(profile, source, sourceSize, () => {}, this.controller.signal));
+      for (let index = 0; index < stems.length; index++) {
+        const item = stems[index], size = (await stat(item.path).catch(() => null))?.size ?? 0;
+        workflow.setInput(String(10 + index), 'file', size < SAFE_UPLOAD ? client.assets.fromFile(item.path) : await uploadLargeAudio(profile, item.path, size, () => {}, this.controller.signal));
+      }
       this.state.message = 'Uploading video and stem assets through the official ComfyUI SDK…';
       this.job = await client.submit(workflow, { signal: this.controller.signal });
       if (this.cancelled) { await this.job.cancel(); throw new Error('Video export cancelled.'); }

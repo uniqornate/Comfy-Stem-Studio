@@ -49,6 +49,19 @@ test('completed job is captured even before renderer polling, child results merg
   const session = await f.projects.load(f.projects.path);
   assert.equal(session.runs[0].stems[1].parentId, f.stem.id); assert.ok(f.separation.outputs.has(child.id));
 });
+test('removed completed channels stay removed across saves and can be restored by undo state', async t => {
+  const f = await fixture(t);
+  f.separation.state = f.run;
+  await f.projects.save({ ...f.payload, runs: [], view: { hiddenStemIds: [f.stem.id] } });
+  assert.equal(f.projects.current.runs.length, 0);
+  await f.projects.save({ ...f.payload, runs: [f.run], view: { hiddenStemIds: [] } });
+  assert.equal(f.projects.current.runs[0].stems[0].id, f.stem.id);
+  const child = { ...f.stem, id: 'child-a', parentId: f.stem.id, label: 'Footsteps' };
+  f.separation.outputs.set(child.id, { path: f.audio, name: 'footsteps.flac' });
+  f.separation.state = { phase: 'complete', runId: 'detail-a', rootRunId: 'take-a', stems: [child] };
+  await f.projects.save({ ...f.payload, runs: [f.run], view: { hiddenStemIds: [child.id] } });
+  assert.deepEqual(f.projects.current.runs[0].stems.map(stem => stem.id), [f.stem.id]);
+});
 test('missing media references remain saved and a source can be relinked without losing stems', async t => {
   const f = await fixture(t); await f.projects.save(f.payload);
   await unlink(f.source); await unlink(join(dirname(f.projects.path), 'assets', `${f.stem.id}.flac`));
@@ -67,6 +80,21 @@ test('project copies have separate assets and identity; creating a project retai
   await f.projects.rename('Scene 01'); assert.equal(f.projects.info().name, 'Scene 01');
   await f.projects.create('Scene 02'); assert.ok(await readFile(copied.info.path));
   await assert.rejects(f.projects.save(f.payload), /active project changed/);
+});
+test('project deletion removes the selected record but keeps media and opens an empty replacement for the active one', async t => {
+  const f = await fixture(t);
+  await f.projects.save(f.payload);
+  const originalPath = f.projects.path;
+  const copy = await f.projects.saveAs(join(f.root, 'copies'));
+  await f.projects.deleteProject(originalPath);
+  await assert.rejects(readFile(originalPath), { code: 'ENOENT' });
+  assert.ok(await readFile(f.source));
+  assert.ok(await readFile(copy.info.path));
+  const replacement = await f.projects.deleteProject(copy.info.path);
+  assert.notEqual(replacement.info.id, copy.info.id);
+  await assert.rejects(readFile(copy.info.path), { code: 'ENOENT' });
+  assert.ok(await readFile(f.audio));
+  await assert.rejects(f.projects.deleteProject(originalPath), /Choose a project/);
 });
 test('atomic backup recovers malformed primary and interrupted processing is never resubmitted', async t => {
   const f = await fixture(t); await f.projects.save(f.payload);

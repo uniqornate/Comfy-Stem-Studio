@@ -8,9 +8,9 @@ test('audio readiness never requests the global inventory and tolerates absent o
     calls.push(url);
     assert.notEqual(new URL(url).pathname, '/object_info');
     const name = url.split('/').at(-1);
-    return ['StemStudioExtract', 'StemStudioExtractAll', 'StemStudioAudioRange', 'StemStudioRestoreRange', 'StemStudioSAM', 'StemStudioGuideSep', 'StemStudioEditAudio', 'StemStudioMusicSeparate', 'StemStudioVideoClip', 'MMAudioModelLoader', 'MMAudioFeatureUtilsLoader', 'MMAudioSampler', 'LoadVideo', 'CheckpointLoaderSimple', 'CLIPLoader', 'CLIPTextEncode', 'KSampler', 'EmptyLatentAudio', 'VAEDecodeAudio'].includes(name) ? new Response('{}', { status: 404 }) : new Response(JSON.stringify({ [name]: { input: {} } }));
+    return ['StemStudioExtract', 'StemStudioExtractAll', 'StemStudioAudioRange', 'StemStudioRestoreRange', 'StemStudioLoadAudioRange', 'StemStudioSAM', 'StemStudioGuideSep', 'StemStudioEditAudio', 'StemStudioMusicSeparate', 'StemStudioVideoClip', 'MMAudioModelLoader', 'MMAudioFeatureUtilsLoader', 'MMAudioSampler', 'LoadVideo', 'CheckpointLoaderSimple', 'CLIPLoader', 'CLIPTextEncode', 'KSampler', 'EmptyLatentAudio', 'VAEDecodeAudio'].includes(name) ? new Response('{}', { status: 404 }) : new Response(JSON.stringify({ [name]: { input: {} } }));
   });
-  assert.equal(calls.length, 22);
+  assert.equal(calls.length, 23);
   assert.deepEqual(Object.keys(nodes).sort(), ['LoadAudio', 'SaveAudio', 'StemStudioSeparate']);
 });
 

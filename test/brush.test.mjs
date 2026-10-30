@@ -60,12 +60,12 @@ test('brush job returns one new channel without a parent and is refused when the
   let submitted;
   const client = { assets: { fromFile: path => path }, workflows: { fromJson: graph => ({ graph, setInput() {} }) }, submit: async workflow => { submitted = workflow.graph; return { status: 'succeeded', refresh: async () => {}, outputs: [{ nodeId: '10', type: 'audio', name: 'brush_00001_.flac', toFile: path => writeFile(path, 'painted') }] }; } };
   const profile = { comfyUrl: 'http://127.0.0.1:8188', proxyUrl: 'http://127.0.0.1:8189' };
-  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, brush: true, brushModel: true }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, brush: true, brushModel: true }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, audio, { mode: 'brush', target: 'footsteps on gravel', rootRunId: 'take-1', brush }); await runner.pending;
   const state = runner.snapshot();
   assert.equal(state.phase, 'complete'); assert.equal(state.stems.length, 1); assert.equal(state.stems[0].label, 'footsteps on gravel'); assert.equal(state.stems[0].parentId, undefined);
   assert.equal(state.rootRunId, 'take-1'); assert.match(state.model, /^Brush · footsteps/); assert.equal(submitted['10'].class_type, 'SaveAudio');
-  const blocked = new Separation(join(root, 'cache2'), path => path, { check: async () => ({ ready: true, brush: true, brushModel: false }), makeClient: () => client });
+  const blocked = new Separation(join(root, 'cache2'), path => path, { check: async () => ({ ready: true, brush: true, brushModel: false }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await blocked.start(profile, audio, { mode: 'brush', target: 'x', brush }); await blocked.pending;
   assert.equal(blocked.snapshot().phase, 'failed'); assert.match(blocked.snapshot().message, /sound model/);
 });
@@ -75,7 +75,7 @@ test('a finished job the interface never read is handed over once when the next 
   const audio = join(root, 'source.flac'); await writeFile(audio, 'source');
   const client = { assets: { fromFile: path => path }, workflows: { fromJson: graph => ({ graph, setInput() {} }) }, submit: async () => ({ status: 'succeeded', refresh: async () => {}, outputs: [{ nodeId: '10', type: 'audio', name: 'brush_00001_.flac', toFile: path => writeFile(path, 'painted') }] }) };
   const profile = { comfyUrl: 'http://127.0.0.1:8188', proxyUrl: 'http://127.0.0.1:8189' };
-  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, brush: true, brushModel: true, brushModels: { small: true } }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, brush: true, brushModel: true, brushModels: { small: true } }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, audio, { mode: 'brush', target: 'one', rootRunId: 'take', brush }); await runner.pending;
   const first = runner.snapshot().runId;
   await runner.start(profile, audio, { mode: 'brush', target: 'two', rootRunId: 'take', brush }); await runner.pending;

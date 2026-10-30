@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename, copyFile, stat, realpath } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, copyFile, stat, realpath, unlink } from 'node:fs/promises';
 import { join, dirname, resolve, relative, isAbsolute, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { channelEdit } from '../src/clip-edits.mjs';
@@ -25,6 +25,7 @@ function validate(doc) {
       const native = stem.native?.type === 'output' && typeof stem.native.relative === 'string' && !isAbsolute(stem.native.relative) && !stem.native.relative.split(/[\\/]/).includes('..') && /^StemStudio\/.+\.flac$/i.test(stem.native.relative);
       const asset = typeof stem.file === 'string' && /^assets[\/\\][a-zA-Z0-9_-]+\.flac$/.test(stem.file);
       if (++count > 8192 || typeof stem.label !== 'string' || !Number.isFinite(stem.size) || !/^[a-zA-Z0-9_-]{1,160}$/.test(stem.id) || ids.has(stem.id) || (!native && !asset) || (stem.native && !native) || (native && !doc.storage?.comfyRoot)) throw Error('Invalid project channel.');
+      if (stem.start !== undefined && (!Number.isFinite(stem.start) || !Number.isFinite(stem.end) || stem.start < 0 || stem.end <= stem.start || stem.end > 864000 || typeof stem.channelKey !== 'string')) throw Error('Invalid project audio interval.');
       ids.add(stem.id);
     }
   }
@@ -37,9 +38,10 @@ function validate(doc) {
 function view(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid project workspace.');
   const result = {};
-  for (const key of ['selectedRun', 'model', 'activeOperation', 'target', 'detailMode', 'samVariant', 'lastGuidance', 'detailRequest', 'layoutZoom', 'workspaceShare', 'timelineExpanded', 'floatPosition', 'floatSize', 'exportMode', 'transport', 'timelines']) if (value[key] !== undefined) result[key] = value[key];
+  for (const key of ['selectedRun', 'hiddenStemIds', 'model', 'activeOperation', 'target', 'detailMode', 'samVariant', 'lastGuidance', 'detailRequest', 'layoutZoom', 'workspaceShare', 'timelineExpanded', 'floatPosition', 'floatSize', 'exportMode', 'transport', 'timelines']) if (value[key] !== undefined) result[key] = value[key];
   if (JSON.stringify(result).length > 2 * 1024 * 1024) throw Error('Workspace settings are too large.');
   for (const key of ['selectedRun', 'model', 'activeOperation', 'target', 'detailMode', 'exportMode']) if (result[key] !== undefined && typeof result[key] !== 'string') throw Error('Invalid workspace selection.');
+  if (result.hiddenStemIds !== undefined && (!Array.isArray(result.hiddenStemIds) || result.hiddenStemIds.length > 8192 || !result.hiddenStemIds.every(id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,160}$/.test(id)))) throw Error('Invalid hidden channels.');
   for (const key of ['layoutZoom', 'workspaceShare']) if (result[key] !== undefined && !Number.isFinite(result[key])) throw Error('Invalid workspace scale.');
   if (result.transport) {
     const t = result.transport;
@@ -128,7 +130,7 @@ export class Projects {
         const canonical = path ? await realpath(path).catch(() => null) : null;
         const exists = canonical && (stem.native || inside(await realpath(dirname(this.path)), canonical)) && (await stat(canonical)).isFile();
         if (exists) this.separation.outputs.set(stem.id, { path: canonical, native: stem.native, name: `${stem.label.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)}-${stem.id.slice(0, 8)}.flac` });
-        stems.push({ id: stem.id, label: stem.label, size: stem.size, ...(stem.parentId ? { parentId: stem.parentId } : {}), ...(stem.kind === 'brush' ? { kind: 'brush' } : {}), url: exists ? this.expose(canonical) : '', missing: !exists });
+        stems.push({ id: stem.id, label: stem.label, size: stem.size, ...(Number.isFinite(stem.start) && Number.isFinite(stem.end) ? { start: stem.start, end: stem.end, channelKey: stem.channelKey } : {}), ...(stem.parentId ? { parentId: stem.parentId } : {}), ...(stem.kind === 'brush' ? { kind: 'brush' } : {}), url: exists ? this.expose(canonical) : '', missing: !exists });
         if (!exists) warnings.push(`Missing channel: ${stem.label}`);
       }
       runs.push({ ...run, stems });
@@ -141,13 +143,14 @@ export class Projects {
   async save(payload = {}) {
     if (!this.current || payload.projectId !== this.current.id) throw Error('The active project changed.');
     const activeJob = this.separation.snapshot();
+    const nextView = view(payload.view);
+    const hidden = new Set(nextView.hiddenStemIds || []);
     const supplied = Array.isArray(payload.runs) ? payload.runs : [];
     const runs = supplied.map(run => ({ ...run, stems: [...run.stems] }));
-    if (activeJob.phase === 'complete' && activeJob.runId) {
-      if (activeJob.rootRunId) { const root = runs.find(run => run.runId === activeJob.rootRunId); if (root) root.stems.push(...activeJob.stems.filter(stem => !root.stems.some(other => other.id === stem.id))); }
-      else if (!runs.some(run => run.runId === activeJob.runId)) runs.push(activeJob);
+    if (activeJob.runId && activeJob.stems.length) {
+      if (activeJob.rootRunId) { const root = runs.find(run => run.runId === activeJob.rootRunId); if (root) root.stems.push(...activeJob.stems.filter(stem => !hidden.has(stem.id) && !root.stems.some(other => other.id === stem.id))); }
+      else if (!runs.some(run => run.runId === activeJob.runId) && activeJob.stems.some(stem => !hidden.has(stem.id))) runs.push({ ...activeJob, stems: activeJob.stems.filter(stem => !hidden.has(stem.id)) });
     }
-    const nextView = view(payload.view);
     const input = JSON.stringify({ runs, view: nextView, job: activeJob }); if (input === this.lastInput) return this.info();
     const durable = [];
     const known = new Map(this.current.runs.flatMap(item => item.stems).map(stem => [stem.id, stem]));
@@ -165,7 +168,7 @@ export class Projects {
         }
         // A renamed channel keeps its stored file; only the label follows the interface.
         const label = String(stem.label).slice(0, 160) || 'Channel';
-        stems.push(existing ? { ...existing, label } : { id: stem.id, label, size: stem.size, ...(output?.native ? { native: output.native } : { file }), ...(stem.parentId ? { parentId: stem.parentId } : {}), ...(stem.kind === 'brush' ? { kind: 'brush' } : {}) });
+        stems.push(existing ? { ...existing, label } : { id: stem.id, label, size: stem.size, ...(output?.native ? { native: output.native } : { file }), ...(Number.isFinite(stem.start) && Number.isFinite(stem.end) ? { start: stem.start, end: stem.end, channelKey: stem.channelKey } : {}), ...(stem.parentId ? { parentId: stem.parentId } : {}), ...(stem.kind === 'brush' ? { kind: 'brush' } : {}) });
       }
       durable.push({ runId: run.runId, model: String(run.model || ''), phase: 'complete', message: '', canCancel: false, stems });
     }
@@ -173,6 +176,19 @@ export class Projects {
     await atomic(this.path, next); this.current = next; this.lastInput = input; await this.remember(); return this.info();
   }
   async rename(name) { this.current.name = nameOf(name); await atomic(this.path, this.current); await this.remember(); return this.info(); }
+  async deleteProject(path) {
+    const entry = this.recent.find(item => item.path === path);
+    if (!entry || basename(path) !== 'project.stemstudio.json') throw Error('Choose a project from the list.');
+    const doc = validate(await json(path));
+    if (doc.id !== entry.id) throw Error('The project file no longer matches this list entry.');
+    const wasCurrent = path === this.path;
+    const next = wasCurrent ? await this.create('Untitled project') : null;
+    await unlink(`${path}.bak`).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await unlink(path);
+    this.recent = this.recent.filter(item => item.path !== path);
+    await this.remember();
+    return next;
+  }
   async saveAs(folder, name) {
     const old = this.current, oldPath = this.path;
     const id = randomUUID(), target = join(folder, id, 'project.stemstudio.json');

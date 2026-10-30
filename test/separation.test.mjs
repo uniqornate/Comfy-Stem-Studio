@@ -47,7 +47,7 @@ test('local separation reuses native SaveAudio files without downloading them ag
     return { name, id: `asset-${key}`, jobId: 'job-b', nodeId: String(10 + index), type: 'audio', toFile() { throw Error('Native output must not be downloaded again.'); } };
   }));
   const { client } = fakeClient(outputs);
-  const runner = new Separation(join(root, 'cache'), path => path, { check: async () => ({ ready: true, models: ['mrx'] }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => path, { check: async () => ({ ready: true, models: ['mrx'] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, '/chosen/video.mp4', { nativeRoot: root, outputPrefix }); await runner.pending;
   assert.equal(runner.snapshot().phase, 'complete');
   for (const stem of runner.snapshot().stems) {
@@ -61,7 +61,7 @@ test('completed SAM and USS range jobs retain root take and parent metadata for 
   for (const mode of ['sam', 'uss']) {
     const outputs = ['10', '11'].map(nodeId => ({ nodeId, type: 'audio', toFile: path => writeFile(path, 'synthetic-test-bytes') }));
     const { client } = fakeClient(outputs);
-    const runner = new Separation(join(root, mode), path => path, { check: async () => ({ ready: true, sam: true, detailRange: true, targets: ['Door'] }), makeClient: () => client });
+    const runner = new Separation(join(root, mode), path => path, { check: async () => ({ ready: true, sam: true, detailRange: true, targets: ['Door'] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
     await runner.start(profile, '/chosen/video.mp4', { mode, target: 'Door', parentId: 'parent-channel', rootRunId: 'root-take', range: { start: 1, end: 2 } });
     await runner.pending;
     const result = runner.snapshot();
@@ -99,7 +99,7 @@ test('All receives every dynamic named audio output and exports more than twenty
   const root = await sandbox(t); const names = Array.from({ length: 23 }, (_, i) => `Sound class ${i}`);
   const outputs = names.map((name, i) => ({ nodeId: '2', type: 'audio', name: `class-${String(i).padStart(3, '0')}-sound-${i}_00001_.flac`, toFile: path => writeFile(path, `fixture:${i}`) }));
   const { client } = fakeClient(outputs);
-  const runner = new Separation(join(root, 'cache'), path => `opaque:${basename(path)}`, { check: async () => ({ ready: true, targets: ['All', ...names] }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${basename(path)}`, { check: async () => ({ ready: true, targets: ['All', ...names] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, '/chosen/video.mp4', { mode: 'uss', target: 'All', threshold: 0.1 }); await runner.pending;
   const result = runner.snapshot();
   assert.equal(result.phase, 'complete'); assert.equal(result.stems.length, 23);
@@ -113,7 +113,7 @@ test('All with no outputs, duplicate labels or invalid output names cannot repor
   const root = await sandbox(t);
   for (const outputs of [[], [{ nodeId: '2', type: 'audio', name: 'unrecognized.flac' }], [{ nodeId: '2', type: 'audio', name: 'class-000-a.flac' }, { nodeId: '2', type: 'audio', name: 'class-000-b.flac' }]]) {
     const { client } = fakeClient(outputs);
-    const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true, targets: ['All', 'Speech'] }), makeClient: () => client });
+    const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true, targets: ['All', 'Speech'] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
     await runner.start(profile, '/chosen/video.mp4', { mode: 'uss', target: 'All', threshold: 0.1 }); await runner.pending;
     assert.equal(runner.snapshot().phase, 'failed'); assert.deepEqual(runner.snapshot().stems, []);
   }
@@ -121,7 +121,7 @@ test('All with no outputs, duplicate labels or invalid output names cannot repor
 
 test('All rejects zero threshold before any submission', async t => {
   const root = await sandbox(t);
-  const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true, targets: ['All', 'Speech'] }), makeClient: () => assert.fail('must not submit') });
+  const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true, targets: ['All', 'Speech'] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => assert.fail('must not submit') });
   await runner.start(profile, '/chosen/video.mp4', { mode: 'uss', target: 'All', threshold: 0 }); await runner.pending;
   assert.match(runner.snapshot().message, /above zero/);
 });
@@ -140,7 +140,7 @@ test('USS exports two channels and a later failed job cannot erase an earlier do
   const root = await sandbox(t); const bytes = Buffer.from('target-fixture');
   const outputs = ['10', '11'].map(nodeId => ({ nodeId, type: 'audio', toFile: path => writeFile(path, bytes) }));
   const { client, job } = fakeClient(outputs);
-  const runner = new Separation(join(root, 'cache'), path => `opaque:${basename(path)}`, { check: async () => ({ ready: true, targets: ['Walk, footsteps'], models: ['sfc'] }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${basename(path)}`, { check: async () => ({ ready: true, targets: ['Walk, footsteps'], models: ['sfc'] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, '/chosen/video.mp4', { mode: 'uss', target: 'Walk, footsteps', threshold: 0.1 }); await runner.pending;
   const result = runner.snapshot();
   assert.equal(result.phase, 'complete'); assert.equal(result.stems.length, 2);
@@ -158,7 +158,7 @@ test('USS exports two channels and a later failed job cannot erase an earlier do
 
 test('uninstalled comparison model and invalid USS target fail before any job submission', async t => {
   const root = await sandbox(t);
-  const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true, models: ['sfc'], targets: ['Door'] }), makeClient: () => assert.fail('must not submit') });
+  const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true, models: ['sfc'], targets: ['Door'] }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => assert.fail('must not submit') });
   await runner.start(profile, '/chosen/video.mp4', { model: 'bandit' }); await runner.pending;
   assert.match(runner.snapshot().message, /not installed/);
   await runner.start(profile, '/chosen/video.mp4', { mode: 'uss', target: 'Unsupported' }); await runner.pending;
@@ -174,7 +174,7 @@ test('local installer refuses a remote deployment before writing anything', asyn
 });
 test('missing capability cannot create a fake successful result or submit a job', async t => {
   const root = await sandbox(t);
-  const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: false, message: 'Missing integration' }), makeClient: () => assert.fail('must not submit') });
+  const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: false, message: 'Missing integration' }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => assert.fail('must not submit') });
   await runner.start(profile, '/chosen/video.mp4'); await runner.pending;
   assert.equal(runner.snapshot().phase, 'failed'); assert.deepEqual(runner.snapshot().stems, []);
 });
@@ -184,7 +184,7 @@ test('three SDK outputs become individually exportable and batch export preserve
   const bytes = Buffer.from('offline-output-fixture');
   const outputs = ['10', '11', '12'].map(nodeId => ({ nodeId, type: 'audio', toFile: path => writeFile(path, bytes) }));
   const { client } = fakeClient(outputs);
-  const runner = new Separation(join(root, 'cache'), path => `opaque:${basename(path)}`, { check: async () => ({ ready: true }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${basename(path)}`, { check: async () => ({ ready: true }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, '/chosen/video.mp4'); await runner.pending;
   const result = runner.snapshot(); assert.equal(result.phase, 'complete'); assert.equal(result.stems.length, 3);
   assert.deepEqual(result.stems.map(stem => stem.label), ['Dialogue', 'Music', 'Effects']);
@@ -199,7 +199,7 @@ test('missing or failed server output never presents partial stems as a complete
   const root = await sandbox(t);
   for (const status of ['succeeded', 'failed']) {
     const { client } = fakeClient([{ nodeId: '10', type: 'audio', toFile: () => assert.fail('must not download incomplete set') }], status);
-    const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true }), makeClient: () => client });
+    const runner = new Separation(root, () => 'unused', { check: async () => ({ ready: true }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
     await runner.start(profile, '/chosen/video.mp4'); await runner.pending;
     assert.equal(runner.snapshot().phase, 'failed'); assert.equal(runner.snapshot().stems.length, 0);
   }

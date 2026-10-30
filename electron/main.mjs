@@ -53,8 +53,8 @@ app.whenReady().then(async () => {
   if ((await stat(quietHost).catch(() => null))?.isFile()) process.env.STEM_QUIET_PROCESS = quietHost;
   proxyManager = new ProxyManager(join(app.getPath('userData'), 'managed-proxy'));
   const expose = path => { const token = randomUUID(); sources.set(token, path); return `app-media://source/${token}`; };
-  separation = new Separation(join(app.getPath('userData'), 'stem-cache'), expose);
-  const batchSeparation = new Separation(join(app.getPath('userData'), 'batch-cache'), expose);
+  separation = new Separation(join(app.getPath('userData'), 'stem-cache'), expose, { audioScript: app.isPackaged ? join(process.resourcesPath, 'comfy_nodes', 'StemStudio', 'audio_prepare.py') : join(here, '..', 'comfy_nodes', 'StemStudio', 'audio_prepare.py') });
+  const batchSeparation = new Separation(join(app.getPath('userData'), 'batch-cache'), expose, { audioScript: app.isPackaged ? join(process.resourcesPath, 'comfy_nodes', 'StemStudio', 'audio_prepare.py') : join(here, '..', 'comfy_nodes', 'StemStudio', 'audio_prepare.py') });
   const batch = new BatchRunner(batchSeparation);
   const mixExporter = new MixExporter();
   const brushModels = Object.fromEntries(['small', 'medium'].map(model => [model, new BrushModelManager({ files: brushFiles(model), label: model === 'medium' ? 'Stable Audio 3 Medium' : 'The sound model' })]));
@@ -89,6 +89,7 @@ app.whenReady().then(async () => {
         return result.canceled ? null : projects.load(result.filePaths[0]);
       }
       if (action === 'recent') { const entry = projects.recent.find(item => item.path === argument); if (!entry) throw Error('Choose a project from the recent list.'); return projects.load(entry.path); }
+        if (action === 'delete') return projects.deleteProject(argument);
       if (action === 'copy') {
         const result = await dialog.showOpenDialog(window, { title: 'Save project copy in folder', properties: ['openDirectory', 'createDirectory'] });
         return result.canceled ? null : projects.saveAs(result.filePaths[0]);

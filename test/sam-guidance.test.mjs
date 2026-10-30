@@ -50,7 +50,7 @@ test('SDK submits original video separately from selected parent audio and retai
     const inputs = [];
     const job = { status: 'succeeded', refresh: async () => {}, outputs: ['10','11'].map(nodeId => ({ nodeId, type: 'audio', toFile: path => writeFile(path, 'fixture only') })) };
     const client = { assets: { fromFile: path => path }, workflows: { fromJson: () => ({ setInput: (...args) => inputs.push(args) }) }, submit: async () => job };
-    const runner = new Separation(root, path => path, { makeClient: () => client, check: async () => ({ ready: true, sam: true, samPrompts: true, samVisual: true, detailRange: true }) });
+    const runner = new Separation(root, path => path, { prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client, check: async () => ({ ready: true, sam: true, samPrompts: true, samVisual: true, detailRange: true }) });
     await runner.start({ proxyUrl: 'http://127.0.0.1:8189' }, 'parent.flac', { mode: 'sam', target: 'Door', range, parentId: 'parent', rootRunId: 'take', samVideoPath: 'original.mp4', sam: { visual: { keyframes: [{ time: 12, box }] } } }); await runner.pending;
     assert.equal(runner.snapshot().phase, 'complete'); assert.equal(runner.snapshot().rootRunId, 'take');
     assert.deepEqual(inputs, [['1','audio','parent.flac'], ['6','file','original.mp4']]);

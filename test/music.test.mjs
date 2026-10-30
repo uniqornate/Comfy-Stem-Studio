@@ -46,12 +46,12 @@ test('music job returns six channels, and is refused without the node or model',
   const audio = join(root, 'song.flac'); await writeFile(audio, 'song');
   const outputs = MUSIC_CHANNELS.map(channel => ({ nodeId: channel.node, type: 'audio', name: `${channel.key}_00001_.flac`, toFile: path => writeFile(path, channel.key) }));
   const client = { assets: { fromFile: path => path }, workflows: { fromJson: graph => ({ graph, setInput() {} }) }, submit: async () => ({ status: 'succeeded', refresh: async () => {}, outputs }) };
-  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, music: true, musicModel: true }), makeClient: () => client });
+  const runner = new Separation(join(root, 'cache'), path => `opaque:${path}`, { check: async () => ({ ready: true, music: true, musicModel: true }), prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
   await runner.start(profile, audio, { mode: 'music' }); await runner.pending;
   const state = runner.snapshot();
   assert.equal(state.phase, 'complete'); assert.deepEqual(state.stems.map(stem => stem.label), ['Vocals', 'Drums', 'Bass', 'Guitar', 'Piano', 'Other']); assert.equal(state.model, 'Music · 6 stems');
   for (const status of [{ ready: true, music: false, musicModel: false }, { ready: true, music: true, musicModel: false }]) {
-    const blocked = new Separation(join(root, `cache-${status.music}`), path => path, { check: async () => status, makeClient: () => client });
+    const blocked = new Separation(join(root, `cache-${status.music}`), path => path, { check: async () => status, prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => client });
     await blocked.start(profile, audio, { mode: 'music' }); await blocked.pending;
     assert.equal(blocked.snapshot().phase, 'failed'); assert.match(blocked.snapshot().message, /music|Music/);
   }

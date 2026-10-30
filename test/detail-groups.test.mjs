@@ -33,7 +33,7 @@ test('SAM and individual USS target graphs crop once and independently pad targe
   }
 });
 test('invalid ranges are rejected before submitting or activating a model job', async () => {
-  const runner = new Separation('unused', value => value, { makeClient: () => { throw Error('must not submit'); } });
+  const runner = new Separation('unused', value => value, { prepareAudio: async (_profile, source) => ({ path: source, size: 1, duration: 10, cleanup: async () => {} }), makeClient: () => { throw Error('must not submit'); } });
   for (const range of [{ start: -1, end: 2 }, { start: 2, end: 2 }, { start: 1, end: Infinity }]) {
     await assert.rejects(runner.start({}, 'unused', { mode: 'sam', target: 'door', range }), /valid channel range/);
     assert.equal(runner.active, false);

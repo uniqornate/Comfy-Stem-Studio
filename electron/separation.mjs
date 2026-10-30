@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { createReadStream, constants } from 'node:fs';
 import { mkdir, readFile, writeFile, stat, readdir, copyFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { normalizeEndpoint } from './connection.mjs';
 import { normalizeGuidance } from '../src/sam-guidance.mjs';
 import { channelEdit } from '../src/clip-edits.mjs';
@@ -11,6 +12,7 @@ import { nativeOutput, nativeRelative } from './native-media.mjs';
 import { brushGraph, brushCapability } from './brush.mjs';
 import { musicGraph, musicCapability, MUSIC_CHANNELS } from './music.mjs';
 import { findNodePack } from './node-pack.mjs';
+import { prepareAudioSource, uploadLargeAudio, audioWindows, SAFE_UPLOAD } from './audio-source.mjs';
 
 const CHANNELS = [{ key: 'dialogue', label: 'Dialogue', node: '10' }, { key: 'music', label: 'Music', node: '11' }, { key: 'effects', label: 'Effects', node: '12' }];
 function baseWorkflow(options = {}) {
@@ -73,6 +75,12 @@ export function stemWorkflow(options = {}) {
     for (const node of Object.values(graph)) if (node.class_type === 'SaveAudio') node.inputs.filename_prefix = `${options.outputPrefix}/${node.inputs.filename_prefix.split('/').at(-1)}`;
     if (options.mode === 'uss' && options.target === 'All') graph['2'].inputs.filename_prefix = options.outputPrefix;
   }
+  if (options.chunkRange) {
+    const { start, end } = options.chunkRange;
+    if (options.range || options.edits || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > 864000) throw Error('Invalid audio chunk.');
+    graph['1'] = { class_type: 'StemStudioLoadAudioRange', inputs: { file: '', start_seconds: start, end_seconds: end } };
+    return graph;
+  }
   if (options.edits) {
     channelEdit(options.edits,864000);
     graph['7'] = { class_type:'StemStudioEditAudio',inputs:{ audio:['1',0],edits_json:JSON.stringify(options.edits) } };
@@ -96,7 +104,7 @@ async function probeEngine(profile, fetchImpl = fetch) {
     const missing = ['LoadAudio', 'StemStudioSeparate', 'SaveAudio'].filter(name => !nodes[name]);
     const models = nodes.StemStudioSeparate?.input?.required?.model?.[0] || ['sfc'];
     const targets = nodes.StemStudioExtract?.input?.required?.target?.[0] || [];
-    return { ...brushCapability(nodes), ...musicCapability(nodes), samModels: !!nodes.StemStudioSAM?.input?.optional?.model_variant, editAudio: !!nodes.StemStudioEditAudio, projectOutputs: !!nodes.StemStudioExtractAll?.input?.optional?.filename_prefix, detailRange: !!nodes.StemStudioAudioRange && !!nodes.StemStudioRestoreRange, sam: !!nodes.StemStudioSAM, guidesep: !!nodes.StemStudioGuideSep, samPrompts: !!nodes.StemStudioSAM?.input?.optional?.guidance_json, samVisual: !!nodes.StemStudioSAM?.input?.optional?.video && !!nodes.LoadVideo, ready: missing.length === 0, models, autoThreshold: !!nodes.StemStudioExtract?.input?.optional?.auto_threshold && !!nodes.StemStudioExtractAll?.input?.optional?.auto_threshold, targets: targets.filter(name => name !== 'USS models not installed' && (name !== 'All' || nodes.StemStudioExtractAll)), message: missing.length ? `Missing audio nodes: ${missing.join(', ')}. Install the integration, restart ComfyUI, then check again.` : 'Audio nodes available. Choose an installed separation model or USS target extraction.' };
+    return { ...brushCapability(nodes), ...musicCapability(nodes), chunkAudio: !!nodes.StemStudioLoadAudioRange, samModels: !!nodes.StemStudioSAM?.input?.optional?.model_variant, editAudio: !!nodes.StemStudioEditAudio, projectOutputs: !!nodes.StemStudioExtractAll?.input?.optional?.filename_prefix, detailRange: !!nodes.StemStudioAudioRange && !!nodes.StemStudioRestoreRange, sam: !!nodes.StemStudioSAM, guidesep: !!nodes.StemStudioGuideSep, samPrompts: !!nodes.StemStudioSAM?.input?.optional?.guidance_json, samVisual: !!nodes.StemStudioSAM?.input?.optional?.video && !!nodes.LoadVideo, ready: missing.length === 0, models, autoThreshold: !!nodes.StemStudioExtract?.input?.optional?.auto_threshold && !!nodes.StemStudioExtractAll?.input?.optional?.auto_threshold, targets: targets.filter(name => name !== 'USS models not installed' && (name !== 'All' || nodes.StemStudioExtractAll)), message: missing.length ? `Missing audio nodes: ${missing.join(', ')}. Install the integration, restart ComfyUI, then check again.` : 'Audio nodes available. Choose an installed separation model or USS target extraction.' };
   } catch (error) { return { ready: false, message: `Audio engine could not be checked: ${error.message}` }; }
 }
 const lastReady = new Map();
@@ -169,6 +177,9 @@ export async function installEngine(profile, nodeSource, modelRoot, update = () 
 export class Separation {
   constructor(cache, expose, options = {}) {
     this.cache = cache; this.expose = expose; this.makeClient = options.makeClient || (() => new Comfy()); this.check = options.check || engineStatus;
+    this.audioScript = options.audioScript || fileURLToPath(new URL('../comfy_nodes/StemStudio/audio_prepare.py', import.meta.url));
+    this.prepareAudio = options.prepareAudio || prepareAudioSource;
+    this.uploadAudio = options.uploadAudio || uploadLargeAudio;
     this.state = { phase: 'idle', message: 'Choose a video, then separate its soundtrack.', stems: [], canCancel: false };
     this.outputs = new Map(); this.active = false; this.job = null; this.delivered = ''; this.missed = [];
   }
@@ -185,11 +196,11 @@ export class Separation {
     if (this.active) throw new Error('A separation job is already active.');
     if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('Invalid separation options.');
     if (this.state.phase === 'complete' && this.state.runId && this.state.runId !== this.delivered && !this.missed.some(item => item.runId === this.state.runId)) this.missed = [...this.missed, structuredClone(this.state)].slice(-12);
-    this.active = true; this.state = { phase: 'checking', message: 'Checking audio workflow…', stems: [], canCancel: false };
+    this.active = true; this.cancelRequested = false; this.abort = new AbortController(); this.state = { phase: 'checking', message: 'Checking audio workflow…', stems: [], canCancel: true };
     if (!['sfc', 'bandit', 'mrx'].includes(options.model || 'mrx')) { this.active = false; throw new Error('Unknown model.'); }
     if (options.mode && !['stems', 'uss', 'sam', 'guidesep', 'brush', 'music'].includes(options.mode)) { this.active = false; throw new Error('Unknown operation.'); }
     try { stemWorkflow(options); } catch (error) { this.active = false; throw error; }
-    this.pending = this.run(profile, sourcePath, options).catch(error => { this.state.phase = 'failed'; this.state.message = error.message; }).finally(() => { this.active = false; this.job = null; this.state.canCancel = false; });
+    this.pending = this.run(profile, sourcePath, options).catch(error => { this.state.phase = this.cancelRequested || error.name === 'AbortError' ? 'cancelled' : 'failed'; this.state.message = this.state.phase === 'cancelled' ? 'Separation cancelled.' : error.message; }).finally(() => { this.active = false; this.job = null; this.abort = null; this.state.canCancel = false; });
     return this.snapshot();
   }
   async run(profile, sourcePath, options) {
@@ -221,13 +232,30 @@ export class Separation {
     if (options.edits && !status.editAudio) throw Error('Update integration and restart idle ComfyUI for edited-channel extraction.');
     if (options.sam && !status.samPrompts) throw Error('Update integration and restart idle ComfyUI to enable SAM guidance.');
     if (options.sam?.visual && (!status.samVisual || !options.samVideoPath)) throw Error('Visual guidance needs native LoadVideo and the original source video.');
+    this.state.phase = 'preparing'; this.state.message = 'Preparing the soundtrack from the source media…';
+    const prepared = await this.prepareAudio(profile, sourcePath, this.audioScript, this.abort.signal);
+    try {
+    const windows = prepared.duration ? audioWindows(prepared.duration, prepared.size) : [null];
+    const chunked = windows.length > 1;
+    if (chunked && !status.chunkAudio) throw Error('Long-audio processing needs the updated Stem Studio node. Update the integration and restart ComfyUI.');
     process.env.COMFY_BASE_URL = normalizeEndpoint(profile.proxyUrl);
     const client = this.makeClient();
-    const workflow = client.workflows.fromJson(stemWorkflow(options));
-    workflow.setInput('1', 'audio', client.assets.fromFile(sourcePath));
-    if (options.sam?.visual || options.brush?.video) workflow.setInput('6', 'file', client.assets.fromFile(options.samVideoPath));
-    if (options.mode === 'guidesep') workflow.setInput('8', 'audio', client.assets.fromFile(options.referencePath));
-    this.state.phase = 'uploading'; this.state.progress = overallProgress('uploading'); this.state.message = 'Sending the source to your selected ComfyUI through the official SDK…';
+    this.state.phase = 'uploading'; this.state.progress = overallProgress('uploading'); this.state.message = 'Sending the soundtrack to ComfyUI…';
+    const sourceAsset = prepared.size < SAFE_UPLOAD ? client.assets.fromFile(prepared.path) : await this.uploadAudio(profile, prepared.path, prepared.size, value => { this.state.progress = 0.03 * value; }, this.abort.signal);
+    const visualSize = options.sam?.visual || options.brush?.video ? (await stat(options.samVideoPath).catch(() => null))?.size : null;
+    const visualAsset = visualSize == null ? (options.sam?.visual || options.brush?.video ? client.assets.fromFile(options.samVideoPath) : null) : visualSize < SAFE_UPLOAD ? client.assets.fromFile(options.samVideoPath) : await this.uploadAudio(profile, options.samVideoPath, visualSize, () => {}, this.abort.signal);
+    const referenceSize = options.mode === 'guidesep' ? (await stat(options.referencePath).catch(() => null))?.size : null;
+    const referenceAsset = options.mode !== 'guidesep' ? null : referenceSize == null || referenceSize < SAFE_UPLOAD ? client.assets.fromFile(options.referencePath) : await this.uploadAudio(profile, options.referencePath, referenceSize, () => {}, this.abort.signal);
+    const runId = randomUUID(), allStems = [];
+    for (let part = 0; part < windows.length; part++) {
+    if (this.cancelRequested) throw Error('Separation cancelled.');
+    const chunkRange = chunked ? windows[part] : undefined;
+    const pass = { ...options, ...(chunkRange ? { chunkRange, ...(options.outputPrefix ? { outputPrefix: `${options.outputPrefix}-${part}` } : {}) } : {}) };
+    const workflow = client.workflows.fromJson(stemWorkflow(pass));
+    workflow.setInput('1', chunkRange ? 'file' : 'audio', sourceAsset);
+    if (visualAsset) workflow.setInput('6', 'file', visualAsset);
+    if (referenceAsset) workflow.setInput('8', 'audio', referenceAsset);
+    this.state.phase = 'uploading'; this.state.message = chunked ? `Processing audio section ${part + 1} of ${windows.length}…` : 'Sending the soundtrack to ComfyUI…';
     const job = await client.submit(workflow);
     this.job = job; this.state.canCancel = true;
     // The live event stream carries finer progress than polling; both feed the same value.
@@ -236,7 +264,7 @@ export class Separation {
     try {
       do {
         await job.refresh(); this.state.phase = job.status; this.state.message = `ComfyUI job: ${job.status}.`;
-        this.state.progress = job.status === 'running' ? overallProgress('running', jobProgress(latest) ?? jobProgress(job)) : job.status === 'queued' ? null : this.state.progress;
+        this.state.progress = job.status === 'running' ? (chunked ? (part + (jobProgress(latest) ?? jobProgress(job) ?? 0)) / windows.length : overallProgress('running', jobProgress(latest) ?? jobProgress(job))) : job.status === 'queued' ? (chunked ? part / windows.length : null) : this.state.progress;
         const done = this.state.progress, elapsed = (Date.now() - startedAt) / 1000;
         this.state.eta = done !== null && done !== undefined && done > 0.12 && done < 0.97 ? Math.round(elapsed * (1 - done) / (done - 0.05)) : null;
         if (!['queued', 'running', 'canceling'].includes(job.status)) break;
@@ -244,7 +272,7 @@ export class Separation {
       } while (true);
     } finally { live.abort(); }
     this.state.eta = null;
-    this.state.canCancel = false;
+    this.state.canCancel = true;
     if (job.status === 'canceled') { this.state.phase = 'cancelled'; this.state.message = 'Separation cancelled by ComfyUI.'; return; }
     if (job.status !== 'succeeded') throw new Error(`Separation ${job.status}: ${job.error?.message || JSON.stringify(job.error) || 'See the ComfyUI log.'}`);
     const targetName = (options.target || 'target').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 70) || 'target';
@@ -268,18 +296,22 @@ export class Separation {
     const directory = join(this.cache, randomUUID()); if (!options.nativeRoot) await mkdir(directory, { recursive: true });
     const stems = [];
     for (const channel of selected) {
-      const prefix = options.outputPrefix ? `${options.outputPrefix}/${channel.key}` : '';
+      const prefix = pass.outputPrefix ? `${pass.outputPrefix}/${channel.key}` : '';
       let path = await nativeOutput(options.nativeRoot, prefix, channel.output.name);
       if (options.nativeRoot && !path) throw Error(`Native ComfyUI output could not be found: ${channel.output.name}. Check the selected installation and its output directory.`);
       const native = path ? { type: 'output', relative: nativeRelative(options.nativeRoot, 'output', path), assetId: channel.output.id, jobId: channel.output.jobId } : null;
       if (!path) { path = join(directory, `${channel.key}.flac`); await channel.output.toFile(path); }
       const info = await stat(path); if (info.size === 0) throw new Error(`${channel.label} output was empty.`);
-      const id = randomUUID(); this.outputs.set(id, { path, native, name: options.parentId ? `${options.parentId.slice(0, 8)}-${channel.key}-${id.slice(0, 6)}.flac` : `${channel.key}.flac` });
-      stems.push({ id, label: channel.label, size: info.size, url: this.expose(path), ...(options.parentId ? { parentId: options.parentId } : {}), ...(options.mode === 'brush' ? { kind: 'brush' } : {}) });
+      const id = randomUUID(); this.outputs.set(id, { path, native, name: options.parentId ? `${options.parentId.slice(0, 8)}-${channel.key}-${id.slice(0, 6)}.flac` : chunked ? `${channel.key}-${String(part + 1).padStart(3, '0')}.flac` : `${channel.key}.flac` });
+      stems.push({ id, label: chunked ? `${channel.label} · ${part + 1}/${windows.length}` : channel.label, size: info.size, url: this.expose(path), ...(chunkRange ? { start: chunkRange.start, end: chunkRange.end, channelKey: channel.key } : {}), ...(options.parentId ? { parentId: options.parentId } : {}), ...(options.mode === 'brush' ? { kind: 'brush' } : {}) });
     }
-    this.state = { phase: 'complete', message: `${selected.length} channels ready. Preview or save each channel, or download all.`, stems, canCancel: false, runId: randomUUID(), parentId: options.parentId, rootRunId: options.rootRunId, model: ['uss', 'sam'].includes(options.mode) ? `${options.mode.toUpperCase()} · ${options.target}` : options.mode === 'guidesep' ? `GuideSep · ${options.target}` : options.mode === 'brush' ? `Brush · ${String(options.target).slice(0, 40)}` : options.mode === 'music' ? 'Music · 6 stems' : options.model || 'mrx' };
+    allStems.push(...stems);
+    this.job = null;
+    this.state = { phase: part + 1 === windows.length ? 'complete' : 'running', message: chunked ? `Audio section ${part + 1}/${windows.length} ready.` : `${selected.length} channels ready. Preview or save each channel, or download all.`, progress: (part + 1) / windows.length, stems: [...allStems], canCancel: part + 1 < windows.length, runId, parentId: options.parentId, rootRunId: options.rootRunId, model: ['uss', 'sam'].includes(options.mode) ? `${options.mode.toUpperCase()} · ${options.target}` : options.mode === 'guidesep' ? `GuideSep · ${options.target}` : options.mode === 'brush' ? `Brush · ${String(options.target).slice(0, 40)}` : options.mode === 'music' ? 'Music · 6 stems' : options.model || 'mrx' };
+    }
+    } finally { await prepared.cleanup(); }
   }
-  async cancel() { if (this.job && this.state.canCancel) { await this.job.cancel(); this.state.message = 'Cancellation requested. Waiting for ComfyUI to confirm.'; } return this.snapshot(); }
+  async cancel() { if (this.active) { this.cancelRequested = true; this.abort?.abort(); if (this.job) await this.job.cancel(); this.state.message = 'Cancellation requested. Waiting for ComfyUI to confirm.'; } return this.snapshot(); }
   output(id) { const value = this.outputs.get(id); if (!value) throw new Error('This stem is not available. Run separation first.'); return value; }
   async saveOne(id, path) { await copyFile(this.output(id).path, path); }
   async saveAll(parent, ids = this.state.stems.map(stem => stem.id)) {

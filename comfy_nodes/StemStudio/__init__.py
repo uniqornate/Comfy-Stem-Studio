@@ -129,8 +129,8 @@ except ImportError:
 from .resources import register as register_resources
 register_resources()
 
-from .detail_nodes import StemStudioAudioRange, StemStudioRestoreRange, StemStudioSAM, StemStudioGuideSep
-NODE_CLASS_MAPPINGS.update(StemStudioAudioRange=StemStudioAudioRange, StemStudioRestoreRange=StemStudioRestoreRange, StemStudioSAM=StemStudioSAM, StemStudioGuideSep=StemStudioGuideSep)
+from .detail_nodes import StemStudioAudioRange, StemStudioRestoreRange, StemStudioSAM, StemStudioGuideSep, StemStudioLoadAudioRange
+NODE_CLASS_MAPPINGS.update(StemStudioAudioRange=StemStudioAudioRange, StemStudioRestoreRange=StemStudioRestoreRange, StemStudioSAM=StemStudioSAM, StemStudioGuideSep=StemStudioGuideSep, StemStudioLoadAudioRange=StemStudioLoadAudioRange)
 
 from .audio_edits import StemStudioEditAudio
 NODE_CLASS_MAPPINGS["StemStudioEditAudio"] = StemStudioEditAudio
@@ -142,3 +142,6 @@ NODE_DISPLAY_NAME_MAPPINGS["StemStudioMusicSeparate"] = "Stem Studio - Music Ste
 from .video_clip import StemStudioVideoClip
 NODE_CLASS_MAPPINGS["StemStudioVideoClip"] = StemStudioVideoClip
 NODE_DISPLAY_NAME_MAPPINGS["StemStudioVideoClip"] = "Stem Studio - Video Region Frames"
+
+from .media_transfer import register as register_media_transfer
+register_media_transfer()
