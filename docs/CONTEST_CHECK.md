@@ -11,4 +11,4 @@ Rules read on 2026-10-22 from https://comfy.org/open-source-higgsfield. The page
 | Demo video | Required for Most Innovative; judges value showing it working and how it was built. Not in the repository yet. |
 | Deadline | Submissions close 2026-10-30 09:00 PT (19:00 in Istanbul). |
 
-Risks to close before submitting: the installer in `release/` is older than the source (0.12.x is not packaged); most 0.12.x features have only been checked statically; the installer is unsigned; SAM, SFC and MMAudio licenses restrict use, which the README already states.
+Current release: desktop 0.12.45 source and both Windows installers were published at https://github.com/uniqornate/Comfy-Stem-Studio/releases/tag/v0.12.45 on 2026-10-30. Remaining limits: most 0.12.x features have only been checked statically; the installer is unsigned; SAM, SFC and MMAudio licenses restrict use, which the README states.

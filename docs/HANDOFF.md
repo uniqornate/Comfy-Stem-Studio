@@ -14,7 +14,7 @@ changes before registering or editing work.
 
 | Work | Status | Owner | Scope | Next |
 |---|---|---|---|---|
-| W-20261030-53 | IN_PROGRESS | Codex | Publish desktop 0.12.45 source and Windows release. | Commit, push and publish fixed-path installer artifacts. |
+| W-20261030-53 | WAITING_USER | Codex | Desktop 0.12.45 source and Windows release published. | User installs the published setup and performs live ComfyUI/media acceptance. |
 | W-20261027-52 | WAITING_USER | Codex | 0.12.45: audio-only transfer before separation, with bounded audio sections above 96 MiB; mirrored NodePack 0.13.38. | User installs fixed-path setup, restarts ComfyUI and tests long source. |
 | W-20261025-51 | WAITING_USER | Codex | 0.12.44: stable Shift multi-channel selection on pointer press; mirrored with NodePack 0.13.37. | User checks repeated Shift-clicks on channel headers in the running app. |
 | W-20261025-50 | WAITING_USER | Codex | Root run.bat starts the desktop dev script through Bun from its own directory. | User double-clicks run.bat and checks the dev server. |
@@ -80,10 +80,10 @@ changes before registering or editing work.
   Time: 2026-10-30T22:52:54+03:00 | Work: W-20261030-53
 
   Trigger: User requested the latest desktop repository and release be published.
-  Change: Prepared the existing 0.12.45 desktop changes for publication and rebuilt both Windows executables in the fixed release directory. Existing user media and Ableton files were left untouched.
-  Validation: 224 offline JavaScript tests and the TypeScript/Vite build passed. Electron Builder packaged the NSIS core. The custom setup verified all eight embedded resources by SHA-256. No app launch, live ComfyUI job or media test was performed.
+  Change: Published the existing 0.12.45 desktop changes as GitHub main commit c673754 and tag v0.12.45. Rebuilt both Windows executables in the fixed release directory and uploaded them to the public release. Existing user media and Ableton files were left untouched.
+  Validation: 224 offline JavaScript tests and the TypeScript/Vite build passed. Electron Builder packaged the NSIS core. The custom setup verified all eight embedded resources by SHA-256. The GitHub release lists both uploaded assets with SHA-256 digests matching the local files. No app launch, live ComfyUI job or media test was performed.
   Artifacts: release/Stem-Studio-Core.exe, release/Stem-Studio-Setup.exe, package.json, electron/, src/, comfy_nodes/StemStudio/, test/, docs/HANDOFF.md.
-  Next: Publish the source and binaries, then user performs live acceptance.
+  Next: User installs the published setup and performs live acceptance.
 
 ### W-20261027-52: Audio-first long-media processing
 
